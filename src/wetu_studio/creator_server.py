@@ -296,7 +296,8 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError: self._send(404, {"error": "creator UI not found"})
             return
         if path == "/api/state":
-            self._send(200, {"project_id": STATE.project_id,
+            with _STATE_LOCK:
+                snapshot = {"project_id": STATE.project_id,
                               "characters": [_jsonable(x) for x in STATE.characters.values()],
                               "worlds": [_jsonable(x) for x in STATE.worlds.values()],
                               "scenes": [_jsonable(x) for x in STATE.scenes.values()],
@@ -307,7 +308,8 @@ class Handler(BaseHTTPRequestHandler):
                                            "mature": {"mode": "MATURE_18_PLUS", "policy_version": "1.0"},
                                            "character_references": [_jsonable(x) for x in UNIVERSE.character_references],
                                            "original_universe_id": UNIVERSE.original_universe_id,
-                                           "provenance": list(UNIVERSE.provenance)}})
+                                           "provenance": list(UNIVERSE.provenance)}}
+            self._send(200, snapshot)
             return
         self._send(404, {"error": "not found"})
 
@@ -466,13 +468,21 @@ class Handler(BaseHTTPRequestHandler):
                 request=AnimationRequest(body["request_id"],body.get("project_id",STATE.project_id),body["scene_id"],style,body["prompt"],body.get("references",[]),body.get("options",{}))
                 self._send(200,ANIMATION.build_request(request)); return
             if path == "/api/characters":
-                CORE.add_character(CharacterDNA(**body)); _persist_state(STATE); self._send(201,{"ok":True}); return
+                with _STATE_LOCK:
+                    CORE.add_character(CharacterDNA(**body)); _persist_state(STATE)
+                self._send(201,{"ok":True}); return
             if path == "/api/worlds":
-                CORE.add_world(WorldDNA(**body)); _persist_state(STATE); self._send(201,{"ok":True}); return
+                with _STATE_LOCK:
+                    CORE.add_world(WorldDNA(**body)); _persist_state(STATE)
+                self._send(201,{"ok":True}); return
             if path == "/api/scenes":
-                CORE.add_scene(SceneMemory(**body)); _persist_state(STATE); self._send(201,{"ok":True}); return
+                with _STATE_LOCK:
+                    CORE.add_scene(SceneMemory(**body)); _persist_state(STATE)
+                self._send(201,{"ok":True}); return
             if path == "/api/generate":
-                result=CORE.generate(**body); _persist_state(STATE); self._send(200,_jsonable(result)); return
+                with _STATE_LOCK:
+                    result=CORE.generate(**body); _persist_state(STATE)
+                self._send(200,_jsonable(result)); return
             self._send(404, {"error":"not found"})
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
             self._send(400, {"error":str(exc)})
