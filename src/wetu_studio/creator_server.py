@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from .creator_core import CreatorApplicationCore, CreatorState
 from .models.production import CharacterDNA, WorldDNA, SceneMemory
-from .universe_mode import UniverseMode, UniverseProduction
+from .universe_mode import UniverseMode, UniverseProduction, IPCharacterReference
 from .animation_engine import AnimationEngine, AnimationRequest, AnimationStyle
 from .fan_film_pipeline import FanFilmPipeline
 from .scriptural_universe import ScripturalSource, ScripturalUniverse, SourceClass, FidelityMode, ScripturalRealismQA
@@ -196,10 +196,10 @@ def _activate_project(project_id):
             _persist_state(STATE)
             _save_runtime(STATE.project_id)
         STATE_FILE = _project_file(project_id)
-    STATE = _load_persistent_state()
-    STATE.project_id = project_id
-    CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
-    _persist_state(STATE)
+        STATE = _load_persistent_state()
+        STATE.project_id = project_id
+        CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
+        _persist_state(STATE)
         _load_runtime(project_id)
         return STATE
 
