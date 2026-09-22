@@ -26,6 +26,7 @@ from .true_story_realism import TrueStoryRealismEngine, TrueStoryMode
 from .production_realism import ProductionRealismOrchestrator
 from .creative_orchestrator import WetuCreativeOrchestrator
 from .media_engine import MediaRegistry, MediaRequest, provider_from_environment
+from .subtitle_engine import SubtitleEngine
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -371,6 +372,29 @@ class Handler(BaseHTTPRequestHandler):
                     STATE.memory.remember("subtitle_setting_changed", {"enabled": enabled})
                     _persist_state(STATE)
                 self._send(200, {"ok": True, "subtitles_enabled": enabled})
+                return
+
+            if path == "/api/subtitles/generate":
+                if not STATE.subtitles_enabled:
+                    self._send(409, {"error": "subtitles are disabled; enable them explicitly first"})
+                    return
+                track_id = body.get("track_id", "sub-" + str(int(time.time() * 1000)))
+                dialogue = body.get("dialogue", [])
+                language = body.get("language", "fr")
+                engine = SubtitleEngine()
+                track = engine.build_track(
+                    track_id=track_id,
+                    project_id=STATE.project_id,
+                    scene_id=body.get("scene_id"),
+                    language=language,
+                    dialogue=dialogue,
+                    source=body.get("source", "dialogue"),
+                    enabled=True,
+                )
+                with _STATE_LOCK:
+                    STATE.memory.remember("subtitle_track_created", track.to_dict())
+                    _persist_state(STATE)
+                self._send(200, {"ok": True, "track": track.to_dict(), "srt": track.to_srt(), "vtt": track.to_vtt()})
                 return
 
             if path == "/api/persistence/status":
