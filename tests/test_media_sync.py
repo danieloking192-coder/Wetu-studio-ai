@@ -14,3 +14,11 @@ def test_media_sync_rejects_overlap_and_invalid_timing():
         assert False
     except ValueError as exc:
         assert "overlap" in str(exc)
+
+
+def test_media_sync_manifest_persists_in_production_memory():
+    from wetu_studio.models.production import ProductionMemory
+    memory = ProductionMemory()
+    manifest = MediaSyncEngine().build_manifest([SyncCue("l1", 0, 1200, "hero", "ln", "Mbote", "voice-1")])
+    memory.add_sync_manifest("sync-1", manifest)
+    assert memory.sync_manifests["sync-1"][0]["voice_request_id"] == "voice-1"
