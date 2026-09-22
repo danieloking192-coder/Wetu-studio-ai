@@ -11,6 +11,7 @@ from .universe_mode import UniverseMode, UniverseProduction
 from .animation_engine import AnimationEngine, AnimationRequest, AnimationStyle
 from .fan_film_pipeline import FanFilmPipeline
 from .scriptural_universe import ScripturalSource, ScripturalUniverse, SourceClass, FidelityMode, ScripturalRealismQA
+from .scriptural_catalog import catalog_summary, story_manifest
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -94,6 +95,12 @@ class Handler(BaseHTTPRequestHandler):
                     UNIVERSE.attach_original_universe(body["original_universe_id"])
                 issues = UNIVERSE.validate()
                 self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(UNIVERSE)}); return
+            if path == "/api/scriptural-catalog":
+                if body.get("story_id"):
+                    self._send(200, story_manifest(body["story_id"]))
+                else:
+                    self._send(200, catalog_summary())
+                return
             if path == "/api/scriptural-universe":
                 global SCRIPTURAL
                 source=ScripturalSource(body["source_id"], body["source_title"], SourceClass(body["source_class"]), body.get("tradition",""), body.get("source_notes",""))
