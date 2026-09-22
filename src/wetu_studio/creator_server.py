@@ -62,7 +62,7 @@ def _jsonable(value):
         return {k: _jsonable(v) for k, v in asdict(value).items()}
     if isinstance(value, dict):
         return {k: _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, (list, tuple, set, frozenset)):
         return [_jsonable(v) for v in value]
     return value
 
