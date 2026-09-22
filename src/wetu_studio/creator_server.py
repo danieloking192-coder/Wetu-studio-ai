@@ -13,6 +13,7 @@ from .fan_film_pipeline import FanFilmPipeline
 from .scriptural_universe import ScripturalSource, ScripturalUniverse, SourceClass, FidelityMode, ScripturalRealismQA
 from .scriptural_catalog import catalog_summary, story_manifest
 from .mature_policy import MatureAccess, MatureRequest, MaturePolicy, decision_json
+from .scriptural_production import build_scriptural_production
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -98,6 +99,9 @@ class Handler(BaseHTTPRequestHandler):
                     UNIVERSE.attach_original_universe(body["original_universe_id"])
                 issues = UNIVERSE.validate()
                 self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(UNIVERSE)}); return
+            if path == "/api/scriptural-production":
+                production=build_scriptural_production(body["story_id"], FidelityMode(body.get("fidelity","historical_cinematic")))
+                self._send(200, production); return
             if path == "/api/mature/access":
                 request=MatureRequest(MatureAccess(body.get("access","unverified")), bool(body.get("all_characters_adult",False)), bool(body.get("consent_confirmed",False)), bool(body.get("real_person",False)), bool(body.get("explicit",False)), bool(body.get("ambiguous_age",False)))
                 decision=MATURE_POLICY.evaluate(request)
