@@ -8,15 +8,16 @@ from .media_engine import MediaRegistry, MediaRequest
 from .provider_registry import ProviderSelector
 from .asset_store import AssetStore
 from .reference_store import ReferenceStore
-from .reference_store import ReferenceStore
+from .continuity_guard import VisualContinuityGuard
 
 class WetuCreativeOrchestrator:
-    def __init__(self, realism=None, media=None, assets=None, references=None):
+    def __init__(self, realism=None, media=None, assets=None, references=None, continuity=None):
         self.realism = realism or ProductionRealismOrchestrator()
         self.media = media
         self.selector = ProviderSelector(media) if media else None
         self.assets = assets or AssetStore()
         self.references = references or ReferenceStore()
+        self.continuity = continuity or VisualContinuityGuard()
 
     def plan(self, *, project_id, brief, characters, world, scenes,
               production_memory=None, default_mood="natural", true_story=None):
@@ -64,6 +65,11 @@ class WetuCreativeOrchestrator:
             rid=f"{project_id}:{item['scene_id']}:{kind}"
             prompt=f"{brief}\nScene {item['sequence']}: {item['scene_id']}"
             auto_refs=self.references.uris_for_scene(project_id, scene_id=item["scene_id"])
+            ref_records=self.references.for_scene(project_id, scene_id=item["scene_id"])
+            preflight=self.continuity.check(scene=item["context"].get("scene"), context=item["context"], references=ref_records)
+            if not preflight["passed"]:
+                assets.append({"scene_id":item["scene_id"],"status":"blocked","issues":preflight["issues"]})
+                continue
             req=MediaRequest(rid, project_id, item["scene_id"], kind, prompt,
                               provider, list(dict.fromkeys((references or []) + auto_refs)), options or {})
             asset=self.media.generate(req, item["context"])
