@@ -7,8 +7,10 @@ def build_fixture():
     hero = CharacterDNA(
         character_id="hero",
         name="Amina",
-        identity={"face":"stable","age_range":"adult"},
-        appearance={"hair":"braided","eyes":"brown","clothing":"blue coat"},
+        face={"identity":"stable","age_range":"adult"},
+        hair={"style":"braided"},
+        eyes={"color":"brown"},
+        wardrobe={"clothing":"blue coat"},
         traits=["calm","determined"],
     )
     world = WorldDNA(
@@ -20,14 +22,15 @@ def build_fixture():
     )
     scenes = [
         SceneMemory(
-            scene_id="s1", sequence=1, title="Arrival",
-            summary="Amina arrives in the city.",
+            scene_id="s1", project_id="full-flow", sequence=1, language="fr",
             character_ids=["hero"], world_id="kinshasa",
+            state={"title":"Arrival","summary":"Amina arrives in the city."},
         ),
         SceneMemory(
-            scene_id="s2", sequence=2, title="Decision",
-            summary="Amina makes a difficult decision in the same world.",
+            scene_id="s2", project_id="full-flow", sequence=2, language="fr",
             character_ids=["hero"], world_id="kinshasa",
+            previous_scene_ids=["s1"],
+            state={"title":"Decision","summary":"Amina makes a difficult decision in the same world."},
         ),
     ]
     return hero, world, scenes
@@ -67,5 +70,3 @@ def test_full_production_flow_preserves_memory_and_continuity():
     metadata = second_asset["asset"]["metadata"]
     assert metadata["references"]
     assert any("s1" in uri for uri in metadata["references"])
-
-# CI trigger marker: full production flow verification.
