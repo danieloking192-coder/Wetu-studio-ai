@@ -1,6 +1,8 @@
 """Dependency-free HTTP application server for the WETU Creator prototype."""
 from __future__ import annotations
 import json
+import os
+import tempfile
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +25,47 @@ from .media_engine import MediaRegistry, MediaRequest, provider_from_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
+STATE_FILE = Path(os.environ.get("WETU_STATE_FILE", str(ROOT / ".wetu" / "production_state.json")))
+
+def _load_persistent_state():
+    state = CreatorState(project_id="demo")
+    if not STATE_FILE.exists():
+        return state
+    try:
+        payload = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        state.project_id = str(payload.get("project_id", "demo"))
+        state.characters = {x["character_id"]: CharacterDNA(**x) for x in payload.get("characters", [])}
+        state.worlds = {x["world_id"]: WorldDNA(**x) for x in payload.get("worlds", [])}
+        state.scenes = {x["scene_id"]: SceneMemory(**x) for x in payload.get("scenes", [])}
+        from .models.production import GenerationRecord, ProductionDecision
+        state.memory.generations = {x["generation_id"]: GenerationRecord(**x) for x in payload.get("generations", [])}
+        state.memory.decisions = {x["decision_id"]: ProductionDecision(**x) for x in payload.get("decisions", [])}
+        state.memory.references = payload.get("references", {})
+        state.memory.events = payload.get("events", [])
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return CreatorState(project_id="demo")
+    return state
+
+def _persist_state(state):
+    payload = _jsonable({
+        "project_id": state.project_id,
+        "characters": list(state.characters.values()),
+        "worlds": list(state.worlds.values()),
+        "scenes": list(state.scenes.values()),
+        "generations": list(state.memory.generations.values()),
+        "decisions": list(state.memory.decisions.values()),
+        "references": state.memory.references,
+        "events": state.memory.events,
+    })
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="wetu-state-", suffix=".json", dir=str(STATE_FILE.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp, STATE_FILE)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 class DemoProvider:
     name = "wetu-demo"
@@ -40,7 +83,7 @@ class DemoContinuity:
         missing = [cid for cid in scene.character_ids if cid not in available]
         return {"passed": not missing, "issues": missing}
 
-STATE = CreatorState(project_id="demo")
+STATE = _load_persistent_state()
 UNIVERSE = UniverseProduction("demo", "WETU Demo Production", UniverseMode.ORIGINAL)
 ANIMATION = AnimationEngine()
 FAN_PIPELINE = None
@@ -102,6 +145,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             size = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(size) or b"{}")
+            if path == "/api/persistence/status":
+                self._send(200, {"ok": True, "persistent": True, "state_file": str(STATE_FILE), "exists": STATE_FILE.exists(),
+                                 "characters": len(STATE.characters), "worlds": len(STATE.worlds),
+                                 "scenes": len(STATE.scenes), "generations": len(STATE.memory.generations)})
+                return
             if path == "/api/universe":
                 mode = UniverseMode(body.get("mode", "original"))
                 global UNIVERSE
@@ -286,11 +334,11 @@ class Handler(BaseHTTPRequestHandler):
                 request = AnimationRequest(body["request_id"], body.get("project_id", STATE.project_id), body["scene_id"], style, body["prompt"], body.get("references", []), body.get("options", {}))
                 self._send(200, ANIMATION.build_request(request)); return
             if path == "/api/characters":
-                CORE.add_character(CharacterDNA(**body)); self._send(201, {"ok": True}); return
+                CORE.add_character(CharacterDNA(**body)); _persist_state(STATE); self._send(201, {"ok": True}); return
             if path == "/api/worlds":
-                CORE.add_world(WorldDNA(**body)); self._send(201, {"ok": True}); return
+                CORE.add_world(WorldDNA(**body)); _persist_state(STATE); self._send(201, {"ok": True}); return
             if path == "/api/scenes":
-                CORE.add_scene(SceneMemory(**body)); self._send(201, {"ok": True}); return
+                CORE.add_scene(SceneMemory(**body)); _persist_state(STATE); self._send(201, {"ok": True}); return
             if path == "/api/generate":
                 result = CORE.generate(**body)
                 self._send(200, _jsonable(result)); return
