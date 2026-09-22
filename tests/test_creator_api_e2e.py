@@ -85,6 +85,23 @@ def test_creator_api_end_to_end_production_flow():
         assert produced["production"]["pipeline"]["memory_preserved"] is True
         assert produced["production"]["pipeline"]["continuity_preflight"] is True
 
+        status, media = request(server, "POST", "/api/media-generate", {
+            "request_id": "media-api-1",
+            "project_id": "api-flow",
+            "scene_id": "s1",
+            "kind": "image",
+            "provider": "wetu-local",
+            "prompt": "Amina in Kinshasa, cinematic realism.",
+            "references": ["hero"],
+            "options": {"aspect_ratio": "16:9"},
+        })
+        assert status == 200
+        assert media["ok"] is True
+        assert media["asset"]["provider"] == "wetu-local"
+        assert media["asset"]["status"] == "ready"
+        assert media["real_media"] is False
+        assert media["asset"]["metadata"]["references"] == ["hero"]
+
         status, state = request(server, "GET", "/api/state")
         assert status == 200
         assert state["project_id"] == "demo"
