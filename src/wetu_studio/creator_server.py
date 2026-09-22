@@ -195,9 +195,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-        if path.startswith("/api/") and _rate_limited(self.client_address[0]):
-            self._send(429, {"error": "rate limit exceeded"})
-            return
+        if path.startswith("/api/"):
+            if _rate_limited(self.client_address[0]):
+                self._send(429, {"error": "rate limit exceeded"})
+                return
+            if AUTH_TOKEN and self.headers.get("Authorization", "") != "Bearer " + AUTH_TOKEN:
+                self._send(401, {"error": "authentication required"})
+                return
         if path in ("/", "/index.html"):
             try: self._send(200, UI.read_bytes(), "text/html; charset=utf-8")
             except FileNotFoundError: self._send(404, {"error": "creator UI not found"})
