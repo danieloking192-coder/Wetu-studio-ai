@@ -157,3 +157,43 @@ def test_subtitles_are_explicitly_toggleable_and_persisted(tmp_path, monkeypatch
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+def test_subtitle_generation_api_requires_toggle_and_persists_track(tmp_path, monkeypatch):
+    from wetu_studio import creator_server
+    monkeypatch.setattr(creator_server, "STATE_DIR", tmp_path / "projects")
+    monkeypatch.setattr(creator_server, "STATE_FILE", tmp_path / "projects" / "demo.json")
+    creator_server.STATE = creator_server.CreatorState(project_id="demo")
+    creator_server.CORE = creator_server.CreatorApplicationCore(
+        creator_server.STATE,
+        providers={"wetu-demo": creator_server.DemoProvider()},
+        qa=creator_server.PassQA(),
+        continuity=creator_server.DemoContinuity(),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        try:
+            request(server, "POST", "/api/subtitles/generate", {
+                "scene_id": "s1", "language": "fr",
+                "dialogue": [{"start_ms": 0, "end_ms": 1000, "text": "Bonjour."}],
+            })
+            assert False
+        except Exception as exc:
+            assert "409" in str(exc)
+
+        status, _ = request(server, "POST", "/api/subtitles/settings", {"enabled": True})
+        assert status == 200
+        status, result = request(server, "POST", "/api/subtitles/generate", {
+            "track_id": "sub-api", "scene_id": "s1", "language": "fr",
+            "dialogue": [{"start_ms": 0, "end_ms": 1000, "speaker": "Amina", "text": "Bonjour."}],
+        })
+        assert status == 200
+        assert result["track"]["track_id"] == "sub-api"
+        assert "WEBVTT" in result["vtt"]
+        assert "Amina: Bonjour." in result["srt"]
+        assert any(e["event_type"] == "subtitle_track_created" for e in creator_server.STATE.memory.events)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
