@@ -1,8 +1,10 @@
 """Provider-neutral media orchestration for WETU Studio AI."""
 from __future__ import annotations
+import json, os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
+from urllib.request import Request, urlopen
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -37,32 +39,62 @@ class MediaProvider(Protocol):
     def generate(self, request: MediaRequest, context: dict[str, Any]) -> dict[str, Any]: ...
 
 class LocalMediaProvider:
-    """Deterministic development provider; never claims to create real media."""
     name = "wetu-local"
     capabilities = {"image", "video", "audio"}
-
     def generate(self, request: MediaRequest, context: dict[str, Any]) -> dict[str, Any]:
         return {"model": "wetu-local-manifest-v1",
                 "uri": f"memory://wetu/{request.project_id}/{request.request_id}/{request.kind}",
                 "kind": request.kind, "real_media": False,
                 "context_items": len(context.get("recent_generations", []))}
 
+class HttpMediaProvider:
+    """Generic real-provider adapter. Endpoint and secret come only from environment variables."""
+    capabilities = {"image", "video", "audio"}
+    def __init__(self, name: str, endpoint: str, api_key: str = "", timeout: float = 60.0):
+        if not name.strip() or not endpoint.startswith(("https://","http://")):
+            raise ValueError("provider name and valid HTTP(S) endpoint are required")
+        self.name, self.endpoint, self.api_key, self.timeout = name, endpoint, api_key, timeout
+
+    def generate(self, request: MediaRequest, context: dict[str, Any]) -> dict[str, Any]:
+        payload = {
+            "request_id": request.request_id, "project_id": request.project_id,
+            "scene_id": request.scene_id, "kind": request.kind,
+            "prompt": request.prompt, "references": request.references,
+            "options": request.options, "context": context,
+        }
+        headers = {"Content-Type": "application/json", "X-WETU-Provider-Contract": "1"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        req = Request(self.endpoint, data=json.dumps(payload).encode(), headers=headers, method="POST")
+        with urlopen(req, timeout=self.timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("provider response must be a JSON object")
+        return data
+
+def provider_from_environment(prefix: str = "WETU_MEDIA") -> HttpMediaProvider | None:
+    endpoint = os.getenv(f"{prefix}_ENDPOINT", "").strip()
+    if not endpoint:
+        return None
+    return HttpMediaProvider(
+        os.getenv(f"{prefix}_NAME", "wetu-http"),
+        endpoint,
+        os.getenv(f"{prefix}_API_KEY", ""),
+        float(os.getenv(f"{prefix}_TIMEOUT", "60")),
+    )
+
 class MediaRegistry:
     def __init__(self, providers: dict[str, MediaProvider] | None = None):
         self.providers = providers or {"wetu-local": LocalMediaProvider()}
-
     def register(self, provider: MediaProvider) -> None:
         self.providers[provider.name] = provider
-
     def generate(self, request: MediaRequest, context: dict[str, Any]) -> MediaAsset:
         provider = self.providers.get(request.provider)
-        if provider is None:
-            raise ValueError(f"unknown media provider: {request.provider}")
-        if request.kind not in provider.capabilities:
-            raise ValueError(f"provider {request.provider} does not support {request.kind}")
+        if provider is None: raise ValueError(f"unknown media provider: {request.provider}")
+        if request.kind not in provider.capabilities: raise ValueError(f"provider {request.provider} does not support {request.kind}")
         result = provider.generate(request, context)
         return MediaAsset(request.request_id, request.project_id, request.scene_id,
                           request.kind, request.provider, str(result.get("model","unknown")),
-                          str(result.get("uri","")), "ready",
+                          str(result.get("uri", result.get("asset_url",""))), "ready",
                           {"request": request.options, "provider_result": result,
-                           "references": list(request.references)})
+                           "references": list(request.references), "real_media": bool(result.get("real_media", True))})
