@@ -122,3 +122,38 @@ def test_project_manager_endpoints(tmp_path, monkeypatch):
     state = creator_server._activate_project("film-1")
     assert state.project_id == "film-1"
     assert creator_server.STATE_FILE == tmp_path / "projects" / "film-1.json"
+
+
+def test_subtitles_are_explicitly_toggleable_and_persisted(tmp_path, monkeypatch):
+    from wetu_studio import creator_server
+    monkeypatch.setattr(creator_server, "STATE_DIR", tmp_path / "projects")
+    monkeypatch.setattr(creator_server, "STATE_FILE", tmp_path / "projects" / "demo.json")
+    creator_server.STATE = creator_server.CreatorState(project_id="demo")
+    creator_server.CORE = creator_server.CreatorApplicationCore(
+        creator_server.STATE,
+        providers={"wetu-demo": creator_server.DemoProvider()},
+        qa=creator_server.PassQA(),
+        continuity=creator_server.DemoContinuity(),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, state = request(server, "GET", "/api/state")
+        assert status == 200
+        assert state["subtitles_enabled"] is False
+
+        status, changed = request(server, "POST", "/api/subtitles/settings", {"enabled": True})
+        assert status == 200
+        assert changed["subtitles_enabled"] is True
+
+        reloaded = creator_server._load_persistent_state()
+        assert reloaded.subtitles_enabled is True
+
+        status, changed = request(server, "POST", "/api/subtitles/settings", {"enabled": False})
+        assert status == 200
+        assert changed["subtitles_enabled"] is False
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
