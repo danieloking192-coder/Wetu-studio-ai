@@ -23,7 +23,7 @@ class PassQA:
 
 class DemoContinuity:
     def check(self, *, scene, context):
-        missing = [cid for cid in scene.character_ids if cid not in context.get("characters", [])]
+        available = {c.character_id for c in context.get("characters", [])}\n        missing = [cid for cid in scene.character_ids if cid not in available]
         return {"passed": not missing, "issues": missing}
 
 STATE = CreatorState(project_id="demo")
