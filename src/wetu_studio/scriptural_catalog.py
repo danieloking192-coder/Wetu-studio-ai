@@ -43,6 +43,12 @@ CATALOG: tuple[NarrativeEntry, ...] = (
     NarrativeEntry("maccabees","Maccabean Revolt","1maccabees_2maccabees","deuterocanonical",("1 Maccabees 1-16","2 Maccabees 1-15"),("Mattathias","Judas Maccabeus"),("Judea","Jerusalem"),"2nd century BCE","resistance;religious freedom"),
     NarrativeEntry("susanna","Susanna","daniel_additions","deuterocanonical",("Daniel 13",),("Susanna","Daniel"),("Babylon",),"ancient setting","justice;wisdom"),
     NarrativeEntry("bel_dragon","Bel and the Dragon","daniel_additions","deuterocanonical",("Daniel 14",),("Daniel",),("Babylon",),"ancient setting","idolatry;wisdom"),
+    NarrativeEntry("enoch_watchers","The Watchers and Enoch","1_enoch","pseudepigraphal",("1 Enoch 1-36",),("Enoch","Watchers","angels"),("heavenly realms","earth"),"Second Temple period","watchers;judgment;cosmic order"),
+    NarrativeEntry("enoch_heavenly_journeys","Enoch's Heavenly Journeys","1_enoch","pseudepigraphal",("1 Enoch 17-36",),("Enoch","angels"),("heavenly realms","cosmic regions"),"Second Temple period","visions;cosmology;judgment"),
+    NarrativeEntry("enoch_parables","The Parables of Enoch","1_enoch","pseudepigraphal",("1 Enoch 37-71",),("Enoch","Son of Man","angels"),("heavenly realms"),"Second Temple period","judgment;eschatology"),
+    NarrativeEntry("enoch_astronomical","The Astronomical Book","1_enoch","pseudepigraphal",("1 Enoch 72-82",),("Enoch","Uriel"),("cosmic realms"),"Second Temple period","calendar;luminaries;cosmology"),
+    NarrativeEntry("enoch_dreams","The Book of Dreams","1_enoch","pseudepigraphal",("1 Enoch 83-90",),("Enoch","Noah"),("earth","visionary realms"),"Second Temple period","visions;judgment;history"),
+    NarrativeEntry("enoch_epistle","The Epistle of Enoch","1_enoch","pseudepigraphal",("1 Enoch 91-108",),("Enoch","righteous","sinners"),("earth","heavenly realms"),"Second Temple period","wisdom;judgment;eschatology"),
 )
 
 def get_story(story_id: str) -> NarrativeEntry:
