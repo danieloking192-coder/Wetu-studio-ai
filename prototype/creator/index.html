@@ -38,7 +38,7 @@ async function mediaGenerate(){
 async function runMedia(){
  const s=await loadState(), sceneId=s.scenes[0]?.scene_id;
  const body={request_id:"media-"+Date.now(),scene_id:sceneId,kind:document.querySelector("#mk").value,provider:document.querySelector("#mp").value,prompt:document.querySelector("#mPrompt").value,references:[],options:{}};
- const r=await api("/api/media",body);document.querySelector("#mediaResult").textContent=JSON.stringify(r,null,2);loadState();
+ const r=await api("/api/media-generate",body);document.querySelector("#mediaResult").textContent=JSON.stringify(r,null,2);loadState();
 }
 async function demoFlow(){
   try{
