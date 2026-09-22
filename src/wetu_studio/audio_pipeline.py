@@ -26,6 +26,6 @@ class AudioRegistry:
     def __init__(self):
         self.providers={AudioProvider.name:AudioProvider()}
     def register(self, provider): self.providers[provider.name]=provider
-    def generate(self, request, context):
+    def generate(self, request, context=None):
         p=self.providers.get(request.options.get("provider",AudioProvider.name), self.providers[AudioProvider.name])
-        return p.generate(request,context)
+        return p.generate(request, context or {})
