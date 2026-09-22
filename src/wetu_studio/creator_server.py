@@ -25,7 +25,9 @@ from .media_engine import MediaRegistry, MediaRequest, provider_from_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
-STATE_FILE = Path(os.environ.get("WETU_STATE_FILE", str(ROOT / ".wetu" / "production_state.json")))
+STATE_DIR = Path(os.environ.get("WETU_STATE_DIR", str(ROOT / ".wetu" / "projects")))
+PROJECT_INDEX = Path(os.environ.get("WETU_PROJECT_INDEX", str(ROOT / ".wetu" / "projects.json")))
+STATE_FILE = Path(os.environ.get("WETU_STATE_FILE", str(STATE_DIR / "demo.json")))
 
 def _load_persistent_state():
     state = CreatorState(project_id="demo")
@@ -45,6 +47,42 @@ def _load_persistent_state():
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         return CreatorState(project_id="demo")
     return state
+
+def _project_file(project_id):
+    safe = "".join(ch for ch in str(project_id) if ch.isalnum() or ch in "-_").strip("-_")
+    if not safe:
+        raise ValueError("project_id is required")
+    return STATE_DIR / (safe + ".json")
+
+def _list_projects():
+    if not PROJECT_INDEX.exists():
+        return [{"project_id": "demo", "title": "WETU Demo Production"}]
+    try:
+        data = json.loads(PROJECT_INDEX.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return [{"project_id": "demo", "title": "WETU Demo Production"}]
+
+def _save_projects(projects):
+    PROJECT_INDEX.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="wetu-projects-", suffix=".json", dir=str(PROJECT_INDEX.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(projects, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp, PROJECT_INDEX)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+def _activate_project(project_id):
+    global STATE, CORE, STATE_FILE
+    STATE_FILE = _project_file(project_id)
+    STATE = _load_persistent_state()
+    STATE.project_id = project_id
+    CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
+    _persist_state(STATE)
+    return STATE
+
 
 def _persist_state(state):
     payload = _jsonable({
@@ -145,6 +183,27 @@ class Handler(BaseHTTPRequestHandler):
         try:
             size = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(size) or b"{}")
+            if path == "/api/projects":
+                self._send(200, {"ok": True, "active_project_id": STATE.project_id, "projects": _list_projects()})
+                return
+            if path == "/api/projects/create":
+                project_id = body.get("project_id")
+                title = body.get("title", project_id)
+                if not project_id or project_id in {p["project_id"] for p in _list_projects()}:
+                    raise ValueError("project_id is required and must be unique")
+                projects = _list_projects()
+                projects.append({"project_id": project_id, "title": title})
+                _save_projects(projects)
+                _activate_project(project_id)
+                self._send(201, {"ok": True, "project_id": project_id, "title": title})
+                return
+            if path == "/api/projects/switch":
+                project_id = body["project_id"]
+                if project_id not in {p["project_id"] for p in _list_projects()}:
+                    raise ValueError("unknown project")
+                _activate_project(project_id)
+                self._send(200, {"ok": True, "project_id": STATE.project_id})
+                return
             if path == "/api/persistence/status":
                 self._send(200, {"ok": True, "persistent": True, "state_file": str(STATE_FILE), "exists": STATE_FILE.exists(),
                                  "characters": len(STATE.characters), "worlds": len(STATE.worlds),
