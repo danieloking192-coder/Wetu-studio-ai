@@ -137,6 +137,9 @@ class Handler(BaseHTTPRequestHandler):
                 issues = EMOTION_ATMOSPHERE.validate(scene)
                 self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)})
                 return
+            if path == "/api/providers":
+                self._send(200, {"providers":[_jsonable(x) for x in CREATIVE_ORCHESTRATOR.selector.profiles()]})
+                return
             if path == "/api/produce":
                 from .models.production import CharacterDNA, SceneMemory, WorldDNA
                 chars=[CharacterDNA(**x) for x in body.get("characters",[])]
