@@ -214,7 +214,7 @@ def _persist_state(state):
         "decisions": list(state.memory.decisions.values()),
         "references": state.memory.references,
         "events": state.memory.events,
-        "subtitles_enabled": state.subtitles_enabled,
+        "subtitles_enabled": bool(getattr(state, "subtitles_enabled", False)),
     })
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix="wetu-state-", suffix=".json", dir=str(STATE_FILE.parent))
@@ -305,6 +305,9 @@ class Handler(BaseHTTPRequestHandler):
                               "scenes": [_jsonable(x) for x in STATE.scenes.values()],
                               "generations": [_jsonable(x) for x in STATE.memory.generations.values()],
                               "events": STATE.memory.events[-30:],
+                              "decisions": [_jsonable(x) for x in STATE.memory.decisions.values()],
+                              "references": _jsonable(STATE.memory.references),
+                              "subtitles_enabled": STATE.subtitles_enabled,
                               "universe": {"production_id": UNIVERSE.production_id, "title": UNIVERSE.title, "mode": UNIVERSE.mode.value,
                                            "scriptural": _jsonable(SCRIPTURAL),
                                            "mature": {"mode": "MATURE_18_PLUS", "policy_version": "1.0"},
