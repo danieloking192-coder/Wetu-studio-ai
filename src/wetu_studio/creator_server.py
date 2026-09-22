@@ -47,7 +47,10 @@ MAX_ID_CHARS = int(os.environ.get("WETU_MAX_ID_CHARS", "128"))
 MAX_PROMPT_CHARS = int(os.environ.get("WETU_MAX_PROMPT_CHARS", "20000"))
 MAX_LIST_ITEMS = int(os.environ.get("WETU_MAX_LIST_ITEMS", "200"))
 _RATE_LOCK = threading.Lock()
-_RATE_BUCKETS = {}\nLOCALIZATION = LocalizationEngine()\nAUDIO = AudioRegistry()\n_LOCALIZATION_TRACKS = {}
+_RATE_BUCKETS = {}
+LOCALIZATION = LocalizationEngine()
+AUDIO = AudioRegistry()
+_LOCALIZATION_TRACKS = {}
 
 def _load_persistent_state():
     state = CreatorState(project_id="demo")
