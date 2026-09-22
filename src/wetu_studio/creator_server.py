@@ -14,6 +14,7 @@ from .scriptural_universe import ScripturalSource, ScripturalUniverse, SourceCla
 from .scriptural_catalog import catalog_summary, story_manifest
 from .mature_policy import MatureAccess, MatureRequest, MaturePolicy, decision_json
 from .scriptural_production import build_scriptural_production
+from .scriptural_entity_catalog import CATALOG
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -99,6 +100,13 @@ class Handler(BaseHTTPRequestHandler):
                     UNIVERSE.attach_original_universe(body["original_universe_id"])
                 issues = UNIVERSE.validate()
                 self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(UNIVERSE)}); return
+            if path == "/api/entities":
+                kind = body.get("kind")
+                entities = list(CATALOG.entities.values())
+                if kind:
+                    from .entity_dna import EntityKind
+                    entities = CATALOG.by_kind(EntityKind(kind))
+                self._send(200, {"entities": [_jsonable(e) for e in entities]}); return
             if path == "/api/scriptural-production":
                 production=build_scriptural_production(body["story_id"], FidelityMode(body.get("fidelity","historical_cinematic")))
                 self._send(200, production); return
