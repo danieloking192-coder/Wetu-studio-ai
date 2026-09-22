@@ -39,7 +39,7 @@ class AdvancedContinuityQA:
                 checks["timeline_integrity"]=False
                 issues.extend({"type":"timeline","detail":x} for x in report["issues"])
             for item in timeline.items:
-                if asset_ids and item.asset_id not in asset_ids:
+                if item.asset_id not in asset_ids:
                     checks["asset_traceability"]=False
                     issues.append({"type":"asset","item_id":item.item_id,"asset_id":item.asset_id})
                 if item.scene_id and item.scene_id not in scene_ids:
