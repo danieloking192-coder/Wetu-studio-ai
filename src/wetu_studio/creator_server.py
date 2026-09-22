@@ -18,6 +18,7 @@ from .scriptural_entity_catalog import CATALOG
 from .emotion_atmosphere import EmotionAtmosphereEngine
 from .true_story_realism import TrueStoryRealismEngine, TrueStoryMode
 from .production_realism import ProductionRealismOrchestrator
+from .creative_orchestrator import WetuCreativeOrchestrator
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -47,6 +48,7 @@ SCRIPTURAL_QA = ScripturalRealismQA()
 EMOTION_ATMOSPHERE = EmotionAtmosphereEngine()
 TRUE_STORY_REALISM = TrueStoryRealismEngine()
 PRODUCTION_REALISM = ProductionRealismOrchestrator(emotion=EMOTION_ATMOSPHERE, true_story=TRUE_STORY_REALISM)
+CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM)
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
@@ -129,6 +131,22 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 issues = EMOTION_ATMOSPHERE.validate(scene)
                 self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)})
+                return
+            if path == "/api/creative-plan":
+                from .models.production import CharacterDNA, SceneMemory, WorldDNA
+                characters = [CharacterDNA(**x) for x in body.get("characters", [])]
+                world = WorldDNA(**body["world"])
+                scenes = [SceneMemory(**x) for x in body.get("scenes", [])]
+                plan = CREATIVE_ORCHESTRATOR.plan(
+                    project_id=body["project_id"],
+                    brief=body["brief"],
+                    characters=characters,
+                    world=world,
+                    scenes=scenes,
+                    production_memory=body.get("production_memory", {}),
+                    default_mood=body.get("default_mood", "natural"),
+                )
+                self._send(200, {"ok": True, "plan": plan})
                 return
             if path == "/api/production-realism":
                 scene_id = body["scene_id"]
