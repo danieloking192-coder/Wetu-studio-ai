@@ -363,15 +363,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True, "project_id": STATE.project_id})
                 return
             if path == "/api/subtitles/settings":
-            enabled = body.get("enabled")
-            if not isinstance(enabled, bool):
-                raise ValueError("enabled must be boolean")
-            with _STATE_LOCK:
-                STATE.subtitles_enabled = enabled
-                STATE.memory.remember("subtitle_setting_changed", {"enabled": enabled})
-                _persist_state(STATE)
-            self._send(200, {"ok": True, "subtitles_enabled": enabled})
-            return
+                enabled = body.get("enabled")
+                if not isinstance(enabled, bool):
+                    raise ValueError("enabled must be boolean")
+                with _STATE_LOCK:
+                    STATE.subtitles_enabled = enabled
+                    STATE.memory.remember("subtitle_setting_changed", {"enabled": enabled})
+                    _persist_state(STATE)
+                self._send(200, {"ok": True, "subtitles_enabled": enabled})
+                return
 
         if path == "/api/persistence/status":
                 self._send(200, {"ok": True, "persistent": True, "exists": STATE_FILE.exists(),
