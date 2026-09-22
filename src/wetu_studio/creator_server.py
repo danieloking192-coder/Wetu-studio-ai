@@ -49,7 +49,7 @@ SCRIPTURAL_QA = ScripturalRealismQA()
 EMOTION_ATMOSPHERE = EmotionAtmosphereEngine()
 TRUE_STORY_REALISM = TrueStoryRealismEngine()
 PRODUCTION_REALISM = ProductionRealismOrchestrator(emotion=EMOTION_ATMOSPHERE, true_story=TRUE_STORY_REALISM)
-CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM)
+CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
 MEDIA = MediaRegistry()
 ENV_MEDIA = provider_from_environment()
 if ENV_MEDIA:
@@ -136,6 +136,24 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 issues = EMOTION_ATMOSPHERE.validate(scene)
                 self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)})
+                return
+            if path == "/api/produce":
+                from .models.production import CharacterDNA, SceneMemory, WorldDNA
+                chars=[CharacterDNA(**x) for x in body.get("characters",[])]
+                world=WorldDNA(**body["world"])
+                scenes=[SceneMemory(**x) for x in body.get("scenes",[])]
+                result=CREATIVE_ORCHESTRATOR.produce(
+                    project_id=body["project_id"], brief=body["brief"],
+                    characters=chars, world=world, scenes=scenes,
+                    provider=body.get("provider","wetu-local"),
+                    kind=body.get("kind","image"),
+                    production_memory=body.get("production_memory",{}),
+                    default_mood=body.get("default_mood","natural"),
+                    true_story=body.get("true_story"),
+                    references=body.get("references",[]),
+                    options=body.get("options",{}),
+                )
+                self._send(200, {"ok":True,"production":_jsonable(result)})
                 return
             if path == "/api/media-generate":
                 request = MediaRequest(
