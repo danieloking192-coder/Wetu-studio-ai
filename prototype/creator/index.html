@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WETU Creator</title>
 <style>
 :root{font-family:Inter,system-ui,sans-serif}body{margin:0;background:#101114;color:#f4f4f5}button{cursor:pointer;border:1px solid #333;background:#191b20;color:inherit;padding:10px 14px;border-radius:9px}.app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}.side{border-right:1px solid #292b31;padding:20px}.brand{font-size:24px;font-weight:800;margin-bottom:24px}.nav button{display:block;width:100%;text-align:left;margin:5px 0;background:transparent}.nav button.active{background:#272a31}.main{padding:28px;max-width:1300px;width:calc(100% - 56px)}.top{display:flex;justify-content:space-between;align-items:center}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px}.card{background:#17191e;border:1px solid #292b31;border-radius:14px;padding:18px}.muted{color:#a1a1aa}.bar{height:8px;background:#292b31;border-radius:8px;overflow:hidden}.bar>i{display:block;height:100%;width:76%;background:#e5e7eb}.workspace{margin-top:24px}.timeline{display:flex;gap:6px;overflow:auto}.shot{min-width:150px;height:90px;background:#23262d;border-radius:10px;padding:10px}.pill{display:inline-block;padding:5px 8px;border-radius:99px;background:#272a31;font-size:12px;margin:3px}.actions{display:flex;gap:8px;flex-wrap:wrap}
- .form{display:grid;gap:10px}.form input,.form select,.form textarea{background:#0f1115;color:inherit;border:1px solid #333;border-radius:9px;padding:10px}.result{white-space:pre-wrap;word-break:break-word} </style></head><body><div class="app"><aside class="side"><div class="brand">WETU</div><div class="nav" id="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Project</h1><div class="muted" id="subtitle">Production workspace</div></div><div class="actions"><button onclick="loadState()">Refresh</button><button onclick="demoFlow()">Run demo</button><button onclick="createScene()">New scene</button><button onclick="exportState()">Export JSON</button><button onclick="mediaGenerate()">Generate Media</button><button onclick="validateScene()">Validate Scene</button><button onclick="fanFilmSetup()">Fan Film</button><button onclick="originalSetup()">Original Universe</button><button onclick="animationRequest()">Animation</button></div></div><section class="workspace" id="workspace"></section></main></div>
+ .form{display:grid;gap:10px}.form input,.form select,.form textarea{background:#0f1115;color:inherit;border:1px solid #333;border-radius:9px;padding:10px}.result{white-space:pre-wrap;word-break:break-word} </style></head><body><div class="app"><aside class="side"><div class="brand">WETU</div><div class="nav" id="nav"></div></aside><main class="main"><div class="top"><div><h1 id="title">Project</h1><div class="muted" id="subtitle">Production workspace</div></div><div class="actions"><button onclick="loadState()">Refresh</button><button onclick="demoFlow()">Run demo</button><button onclick="createScene()">New scene</button><button onclick="exportState()">Export JSON</button><button onclick="mediaGenerate()">Generate Media</button><button onclick="validateScene()">Validate Scene</button><button onclick="runProduction()">Run Production</button><button onclick="fanFilmSetup()">Fan Film</button><button onclick="originalSetup()">Original Universe</button><button onclick="animationRequest()">Animation</button></div></div><section class="workspace" id="workspace"></section></main></div>
 <script>
 const tabs=["Project","Characters","World / City","Script","Storyboard","Generate","Audio","Timeline","QA","Export"];
 const nav=document.querySelector("#nav"),ws=document.querySelector("#workspace"),title=document.querySelector("#title"),sub=document.querySelector("#subtitle");
@@ -39,6 +39,22 @@ async function runMedia(){
  const s=await loadState(), sceneId=s.scenes[0]?.scene_id;
  const body={request_id:"media-"+Date.now(),scene_id:sceneId,kind:document.querySelector("#mk").value,provider:document.querySelector("#mp").value,prompt:document.querySelector("#mPrompt").value,references:[],options:{}};
  const r=await api("/api/media-generate",body);document.querySelector("#mediaResult").textContent=JSON.stringify(r,null,2);loadState();
+}
+async function runProduction(){
+ const s=await loadState();
+ if(!s.scenes.length||!s.characters.length||!s.worlds.length){
+   ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Production blocked</h3><p class="muted">Character DNA, World DNA and at least one Scene are required.</p></div>'); return;
+ }
+ const characters=s.characters, world=s.worlds[0];
+ const scenes=s.scenes.map(x=>({scene_id:x.scene_id,project_id:x.project_id,sequence:x.sequence,character_ids:x.character_ids,world_id:x.world_id,language:x.language,state:x.state}));
+ const brief="Produce the current WETU project using persistent Character DNA, World DNA, Scene Memory and Production Memory.";
+ try{
+   const plan=await api("/api/creative-plan",{project_id:s.project_id,brief,characters,world,scenes,production_memory:{events:s.events,generations:s.generations},default_mood:"natural"});
+   if(!plan.ok){throw new Error(JSON.stringify(plan.issues||plan));}
+   const produced=await api("/api/produce",{project_id:s.project_id,brief,characters,world,scenes,production_memory:{events:s.events,generations:s.generations},provider:"wetu-local",kind:"image",default_mood:"natural",references:[],options:{}});
+   ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Production Orchestrator</h3><p class="muted">Plan: READY · Production: '+(produced.ok?"READY":"BLOCKED")+'</p><div class="result muted">'+JSON.stringify({plan:plan.plan,production:produced.production},null,2)+'</div></div>');
+   loadState();
+ }catch(e){ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Production blocked</h3><p class="muted">'+e.message+'</p></div>')}
 }
 async function validateScene(){
  const s=await loadState(), sceneId=s.scenes[0]?.scene_id;
