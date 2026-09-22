@@ -21,6 +21,7 @@ class CreatorState:
     worlds: dict[str, WorldDNA] = field(default_factory=dict)
     scenes: dict[str, SceneMemory] = field(default_factory=dict)
     memory: ProductionMemory = field(default_factory=ProductionMemory)
+    subtitles_enabled: bool = False
 
 class CreatorApplicationCore:
     """Single application-facing API for the WETU creator workflow."""
