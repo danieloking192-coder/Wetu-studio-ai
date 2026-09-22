@@ -76,9 +76,14 @@ class ProductionMemory:
     decisions: dict[str, ProductionDecision] = field(default_factory=dict)
     references: dict[str, dict[str, Any]] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
+    sync_manifests: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
     def remember(self, event_type: str, payload: dict[str, Any]) -> None:
         self.events.append({"type": event_type, "at": utc_now(), "payload": payload})
+
+    def add_sync_manifest(self, manifest_id: str, cues: list[dict[str, Any]]) -> None:
+        self.sync_manifests[manifest_id] = list(cues)
+        self.remember("media_sync_manifest", {"manifest_id": manifest_id, "cue_count": len(cues)})
 
     def add_generation(self, record: GenerationRecord) -> None:
         self.generations[record.generation_id] = record
