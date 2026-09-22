@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from .scriptural_catalog import NarrativeEntry, get_story
 from .scriptural_universe import FidelityMode, ScripturalSource, ScripturalUniverse, ScripturalRealismQA
+from .scriptural_entity_catalog import CATALOG
 
 @dataclass
 class ScripturalProduction:
@@ -16,7 +17,8 @@ class ScripturalProduction:
         self.scenes = [
             {"scene_id": f"{self.story.story_id}-setup", "role": "setup",
              "characters": list(self.story.characters), "places": list(self.story.places),
-             "source_references": list(self.story.references)},
+             "source_references": list(self.story.references),
+             "entity_ids": [e.entity_id for e in CATALOG.entities.values() if e.name in self.story.characters]},
             {"scene_id": f"{self.story.story_id}-main", "role": "main_event",
              "characters": list(self.story.characters), "places": list(self.story.places),
              "source_references": list(self.story.references)},
@@ -41,6 +43,17 @@ class ScripturalProduction:
             "themes": list(self.story.themes),
             "scenes": self.scenes,
             "qa": self.qa,
+            "entity_catalog": {
+                "available_entities": list(CATALOG.entities.keys()),
+                "referenced_entities": [
+                    {"entity_id": e.entity_id, "name": e.name, "kind": e.kind.value,
+                     "sources": [s.source_id for s in e.sources],
+                     "identity": e.identity, "morphology": e.morphology,
+                     "abilities": e.abilities, "interpretation_notes": e.interpretation_notes}
+                    for e in CATALOG.entities.values()
+                    if e.name in self.story.characters
+                ],
+            },
             "render_status": "provider_required",
         }
 
