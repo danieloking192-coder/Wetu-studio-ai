@@ -4,8 +4,6 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 from wetu_studio.creator_server import Handler
-    from wetu_studio.localization_engine import LocalizationEngine, LocalizationTrack
-    from wetu_studio.audio_pipeline import AudioRegistry, VoiceRequest
 
 
 def request(server, method, path, payload=None):
