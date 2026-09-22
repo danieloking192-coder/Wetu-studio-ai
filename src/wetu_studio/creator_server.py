@@ -35,6 +35,7 @@ STATE_FILE = Path(os.environ.get("WETU_STATE_FILE", str(STATE_DIR / "demo.json")
 MAX_BODY_BYTES = int(os.environ.get("WETU_MAX_BODY_BYTES", "2097152"))
 RATE_LIMIT_WINDOW = int(os.environ.get("WETU_RATE_LIMIT_WINDOW", "60"))
 RATE_LIMIT_MAX = int(os.environ.get("WETU_RATE_LIMIT_MAX", "120"))
+_STATE_LOCK = threading.RLock()
 AUTH_TOKEN = os.environ.get("WETU_AUTH_TOKEN")
 PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 MAX_PROJECTS = int(os.environ.get("WETU_MAX_PROJECTS", "1000"))
@@ -68,6 +69,54 @@ def _project_file(project_id):
     if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
         raise ValueError("invalid project_id")
     return STATE_DIR / (project_id + ".json")
+
+def _runtime_file(project_id):
+    return STATE_DIR / (project_id + ".runtime.json")
+
+def _save_runtime(project_id):
+    payload = _jsonable({
+        "universe": UNIVERSE,
+        "scriptural": SCRIPTURAL,
+        "fan_pipeline": FAN_PIPELINE,
+    })
+    path = _runtime_file(project_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="wetu-runtime-", suffix=".json", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+        _secure_file(path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+def _load_runtime(project_id):
+    path = _runtime_file(project_id)
+    if not path.exists():
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        universe = payload.get("universe") or {}
+        mode = UniverseMode(universe.get("mode", "original"))
+        production = UniverseProduction(universe.get("production_id", project_id), universe.get("title", "WETU Production"), mode)
+        production.original_universe_id = universe.get("original_universe_id")
+        production.provenance = list(universe.get("provenance", []))
+        production.character_references = [IPCharacterReference(**x) for x in universe.get("character_references", [])]
+        global UNIVERSE, SCRIPTURAL, FAN_PIPELINE
+        UNIVERSE = production
+        s = payload.get("scriptural")
+        SCRIPTURAL = None
+        if s:
+            source_data = s.get("source", {})
+            source = ScripturalSource(source_data["source_id"], source_data["source_title"], SourceClass(source_data["source_class"]), source_data.get("tradition", ""), source_data.get("source_notes", ""))
+            SCRIPTURAL = ScripturalUniverse(s["universe_id"], s["title"], source, FidelityMode(s["fidelity"]), s.get("era", ""), s.get("region", ""), s.get("languages", []), s.get("provenance", []), s.get("canon_status", ""), s.get("details", {}))
+        fp = payload.get("fan_pipeline")
+        FAN_PIPELINE = None
+        if fp:
+            FAN_PIPELINE = FanFilmPipeline(UNIVERSE, list(fp.get("stages", [])), list(fp.get("scenes", [])), list(fp.get("animation_requests", [])), list(fp.get("audio_requests", [])), list(fp.get("timeline_items", [])), list(fp.get("qa_reports", [])))
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return
 
 def _secure_file(path):
     try:
@@ -142,12 +191,17 @@ def _save_projects(projects):
 
 def _activate_project(project_id):
     global STATE, CORE, STATE_FILE
-    STATE_FILE = _project_file(project_id)
+    with _STATE_LOCK:
+        if STATE is not None:
+            _persist_state(STATE)
+            _save_runtime(STATE.project_id)
+        STATE_FILE = _project_file(project_id)
     STATE = _load_persistent_state()
     STATE.project_id = project_id
     CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
     _persist_state(STATE)
-    return STATE
+        _load_runtime(project_id)
+        return STATE
 
 def _persist_state(state):
     payload = _jsonable({
@@ -309,13 +363,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/universe":
                 mode = UniverseMode(body.get("mode", "original"))
                 global UNIVERSE
-                UNIVERSE = UniverseProduction(body.get("production_id", "demo"), body.get("title", "WETU Production"), mode)
+                UNIVERSE = UniverseProduction(body.get("production_id", STATE.project_id), body.get("title", "WETU Production"), mode)
                 if mode is UniverseMode.FAN_FILM:
                     for item in body.get("character_references", []):
                         UNIVERSE.add_ip_character(item["character_id"], item["display_name"], item["source_work"], item.get("notes", ""))
                 elif body.get("original_universe_id"):
                     UNIVERSE.attach_original_universe(body["original_universe_id"])
                 issues = UNIVERSE.validate()
+                _save_runtime(STATE.project_id)
                 self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(UNIVERSE)}); return
             if path == "/api/entities":
                 kind = body.get("kind")
@@ -375,6 +430,7 @@ class Handler(BaseHTTPRequestHandler):
                 source=ScripturalSource(body["source_id"],body["source_title"],SourceClass(body["source_class"]),body.get("tradition",""),body.get("source_notes",""))
                 SCRIPTURAL=ScripturalUniverse(body["universe_id"],body["title"],source,FidelityMode(body.get("fidelity","source_faithful")),body.get("era",""),body.get("region",""),body.get("languages",[]),body.get("provenance",[]),body.get("canon_status",""),body.get("details",{}))
                 issues=SCRIPTURAL.validate()
+                _save_runtime(STATE.project_id)
                 self._send(200 if not issues else 400, {"ok":not issues,"issues":issues,"universe":_jsonable(SCRIPTURAL)}); return
             if path == "/api/scriptural-qa":
                 if SCRIPTURAL is None: raise ValueError("Scriptural universe is not configured")
@@ -384,24 +440,24 @@ class Handler(BaseHTTPRequestHandler):
                 global FAN_PIPELINE
                 if UNIVERSE.mode is not UniverseMode.FAN_FILM:
                     self._send(400, {"error":"Select FAN_FILM mode first"}); return
-                FAN_PIPELINE=FanFilmPipeline(UNIVERSE); FAN_PIPELINE.start()
+                FAN_PIPELINE=FanFilmPipeline(UNIVERSE); FAN_PIPELINE.start(); _save_runtime(STATE.project_id)
                 self._send(200, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/scene":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_scene(body["scene_id"],body.get("title",body["scene_id"]),int(body["duration_ms"]),body.get("character_ids",[]))
+                FAN_PIPELINE.add_scene(body["scene_id"],body.get("title",body["scene_id"]),int(body["duration_ms"]),body.get("character_ids",[])); _save_runtime(STATE.project_id)
                 self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/animation":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_animation_request(body); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_animation_request(body); _save_runtime(STATE.project_id); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/audio":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_audio_request(body); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_audio_request(body); _save_runtime(STATE.project_id); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/timeline":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_timeline_item(body); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_timeline_item(body); _save_runtime(STATE.project_id); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/qa":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_qa(body); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_qa(body); _save_runtime(STATE.project_id); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/export":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
                 self._send(200,FAN_PIPELINE.export_manifest()); return
