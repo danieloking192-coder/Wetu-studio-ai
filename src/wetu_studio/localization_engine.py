@@ -17,7 +17,12 @@ class LocalizationTrack:
     lines: list[LocalizedLine] = field(default_factory=list)
 
 class LocalizationEngine:
-    SUPPORTED_LANGUAGES = {"fr","en","es","pt","ar","sw","ln"}
+    # ISO-style internal codes; Tshiluba uses "lua".
+    SUPPORTED_LANGUAGES = {"fr","en","es","pt","ar","sw","ln","lua"}
+    LANGUAGE_NAMES = {
+        "fr":"Français","en":"English","es":"Español","pt":"Português",
+        "ar":"العربية","sw":"Kiswahili","ln":"Lingála","lua":"Tshiluba",
+    }
     def add_line(self, track: LocalizationTrack, line_id: str, speaker_id: str,
                  language: str, text: str, voice_id="", subtitle="") -> LocalizedLine:
         if language not in self.SUPPORTED_LANGUAGES:
