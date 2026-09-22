@@ -27,6 +27,8 @@ from .production_realism import ProductionRealismOrchestrator
 from .creative_orchestrator import WetuCreativeOrchestrator
 from .media_engine import MediaRegistry, MediaRequest, provider_from_environment
 from .subtitle_engine import SubtitleEngine
+from .localization_engine import LocalizationEngine, LocalizationTrack
+from .audio_pipeline import AudioRegistry, VoiceRequest
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -45,7 +47,7 @@ MAX_ID_CHARS = int(os.environ.get("WETU_MAX_ID_CHARS", "128"))
 MAX_PROMPT_CHARS = int(os.environ.get("WETU_MAX_PROMPT_CHARS", "20000"))
 MAX_LIST_ITEMS = int(os.environ.get("WETU_MAX_LIST_ITEMS", "200"))
 _RATE_LOCK = threading.Lock()
-_RATE_BUCKETS = {}
+_RATE_BUCKETS = {}\nLOCALIZATION = LocalizationEngine()\nAUDIO = AudioRegistry()\n_LOCALIZATION_TRACKS = {}
 
 def _load_persistent_state():
     state = CreatorState(project_id="demo")
@@ -363,6 +365,52 @@ class Handler(BaseHTTPRequestHandler):
                 _activate_project(project_id)
                 self._send(200, {"ok": True, "project_id": STATE.project_id})
                 return
+            if path == "/api/localization/line":
+                track_id = body.get("track_id", "loc-" + str(int(time.time() * 1000)))
+                language = body.get("language", "fr")
+                with _STATE_LOCK:
+                    track = _LOCALIZATION_TRACKS.setdefault(
+                        (STATE.project_id, track_id),
+                        LocalizationTrack(scene_id=body.get("scene_id", "")),
+                    )
+                    line = LOCALIZATION.add_line(
+                        track, body["line_id"], body["speaker_id"], language,
+                        body["text"], body.get("voice_id", ""), body.get("subtitle", ""),
+                    )
+                    STATE.memory.remember("localization_line_added", {
+                        "track_id": track_id, "scene_id": track.scene_id,
+                        "line": asdict(line),
+                    })
+                    _persist_state(STATE)
+                self._send(200, {"ok": True, "track_id": track_id,
+                                 "line": asdict(line),
+                                 "languages": LOCALIZATION.languages(track),
+                                 "subtitles": LOCALIZATION.export_subtitles(track)})
+                return
+
+            if path == "/api/audio/voice":
+                request = VoiceRequest(
+                    request_id=body["request_id"],
+                    project_id=body.get("project_id", STATE.project_id),
+                    scene_id=body.get("scene_id", ""),
+                    speaker_id=body["speaker_id"],
+                    language=body.get("language", "fr"),
+                    text=body["text"],
+                    voice_id=body.get("voice_id", ""),
+                    options=body.get("options", {}),
+                )
+                asset = AUDIO.generate(request, body.get("context", {}))
+                with _STATE_LOCK:
+                    STATE.memory.remember("voice_generation_requested", {
+                        "request_id": request.request_id, "scene_id": request.scene_id,
+                        "speaker_id": request.speaker_id, "language": request.language,
+                        "provider": asset.get("provider"), "real_audio": asset.get("real_audio", False),
+                    })
+                    _persist_state(STATE)
+                self._send(200, {"ok": True, "asset": asset,
+                                 "real_audio": asset.get("real_audio", False)})
+                return
+
             if path == "/api/subtitles/settings":
                 enabled = body.get("enabled")
                 if not isinstance(enabled, bool):
