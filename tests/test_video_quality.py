@@ -33,3 +33,15 @@ def test_invalid_fps_is_rejected():
         assert False
     except ValueError as exc:
         assert "fps" in str(exc)
+
+
+def test_media_registry_attaches_video_quality_contract():
+    from wetu_studio.media_engine import MediaRegistry, MediaRequest
+    asset = MediaRegistry().generate(
+        MediaRequest("v1", "demo", "scene-1", "video", "preview", "wetu-local"),
+        {},
+    )
+    target = asset.metadata["video_quality_target"]
+    assert target["width"] == 1920
+    assert target["height"] == 1080
+    assert asset.metadata["video_quality_compliant"] is False
