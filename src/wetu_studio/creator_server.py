@@ -49,11 +49,11 @@ SCRIPTURAL_QA = ScripturalRealismQA()
 EMOTION_ATMOSPHERE = EmotionAtmosphereEngine()
 TRUE_STORY_REALISM = TrueStoryRealismEngine()
 PRODUCTION_REALISM = ProductionRealismOrchestrator(emotion=EMOTION_ATMOSPHERE, true_story=TRUE_STORY_REALISM)
-CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
 MEDIA = MediaRegistry()
 ENV_MEDIA = provider_from_environment()
 if ENV_MEDIA:
     MEDIA.register(ENV_MEDIA)
+CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
