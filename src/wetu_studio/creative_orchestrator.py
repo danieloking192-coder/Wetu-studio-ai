@@ -1,7 +1,6 @@
 """High-level creative-to-media production orchestrator for WETU Studio AI."""
 from __future__ import annotations
 from dataclasses import asdict
-from typing import Any
 from .models.production import CharacterDNA, SceneMemory, WorldDNA
 from .production_realism import ProductionRealismOrchestrator
 from .media_engine import MediaRegistry, MediaRequest
@@ -50,37 +49,56 @@ class WetuCreativeOrchestrator:
                 provider, kind="image", production_memory=None,
                 default_mood="natural", true_story=None, references=None,
                 options=None):
-        if self.media is None:
-            raise ValueError("media registry is required for production")
+        if self.media is None: raise ValueError("media registry is required for production")
         self.selector.require(provider, kind)
-        plan=self.plan(project_id=project_id, brief=brief, characters=characters,
-                       world=world, scenes=scenes, production_memory=production_memory,
+        plan=self.plan(project_id=project_id, brief=brief, characters=characters, world=world,
+                       scenes=scenes, production_memory=production_memory,
                        default_mood=default_mood, true_story=true_story)
         assets=[]
+        continuity_reports=[]
         for item in plan["scenes"]:
             if item["status"] != "ready":
-                assets.append({"scene_id":item["scene_id"],"status":"blocked",
-                                "issues":item["issues"]})
+                assets.append({"scene_id":item["scene_id"],"status":"blocked","issues":item["issues"]})
                 continue
-            rid=f"{project_id}:{item['scene_id']}:{kind}"
-            prompt=f"{brief}\nScene {item['sequence']}: {item['scene_id']}"
-            auto_refs=self.references.uris_for_scene(project_id, scene_id=item["scene_id"])
-            ref_records=self.references.for_scene(project_id, scene_id=item["scene_id"])
-            preflight=self.continuity.check(scene=item["context"].get("scene"), context=item["context"], references=ref_records)
+            scene_data=item["context"].get("scene", {})
+            entity_ids=list(scene_data.get("character_ids", []))
+            world_id=scene_data.get("world_id")
+            if world_id:
+                entity_ids.append(f"world:{world_id}")
+            auto_refs=self.references.uris_for_scene(project_id, entity_ids=entity_ids,
+                                                     continuity_keys=[f"character:{x}" for x in scene_data.get("character_ids", [])] +
+                                                                     ([f"world:{world_id}"] if world_id else []))
+            ref_records=self.references.for_scene(project_id, entity_ids=entity_ids,
+                                                  continuity_keys=[f"character:{x}" for x in scene_data.get("character_ids", [])] +
+                                                                  ([f"world:{world_id}"] if world_id else []))
+            preflight=self.continuity.check(scene=scene_data, context=item["context"], references=ref_records)
+            continuity_reports.append({"scene_id":item["scene_id"], **preflight})
             if not preflight["passed"]:
                 assets.append({"scene_id":item["scene_id"],"status":"blocked","issues":preflight["issues"]})
                 continue
-            req=MediaRequest(rid, project_id, item["scene_id"], kind, prompt,
-                              provider, list(dict.fromkeys((references or []) + auto_refs)), options or {})
+
+            rid=f"{project_id}:{item['scene_id']}:{kind}"
+            prompt=f"{brief}
+Scene {item['sequence']}: {item['scene_id']}"
+            req=MediaRequest(rid, project_id, item["scene_id"], kind, prompt, provider,
+                             list(dict.fromkeys((references or []) + auto_refs)), options or {})
             asset=self.media.generate(req, item["context"])
             record=self.assets.remember(asset)
-            self.references.remember_asset(record, continuity_key=f"scene:{item['scene_id']}")
+            for character_id in scene_data.get("character_ids", []):
+                self.references.remember_asset(record, entity_id=character_id,
+                                               continuity_key=f"character:{character_id}", label="character continuity")
+            if world_id:
+                self.references.remember_asset(record, entity_id=f"world:{world_id}",
+                                               continuity_key=f"world:{world_id}", label="world continuity")
+            self.references.remember_asset(record, continuity_key=f"scene:{item['scene_id']}", label="scene continuity")
             assets.append({"scene_id":item["scene_id"],"status":"generated",
                            "asset":asdict(asset),"asset_record":asdict(record)})
         return {"project_id":project_id,"brief":brief,"plan":plan,"assets":assets,
+                "continuity":continuity_reports,
                 "provider_profiles":[asdict(p) for p in self.selector.profiles()],
                 "pipeline":{"planned":True,"qa_before_generation":True,
-                            "memory_preserved":True,"visual_references_persisted":True}}
+                            "memory_preserved":True,"visual_references_persisted":True,
+                            "continuity_preflight":True}}
 
     def render_scene(self, *, project_id, scene, context, provider,
                      kind="image", prompt="", references=None, options=None):
