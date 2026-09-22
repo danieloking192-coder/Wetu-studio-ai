@@ -7,13 +7,15 @@ from .production_realism import ProductionRealismOrchestrator
 from .media_engine import MediaRegistry, MediaRequest
 from .provider_registry import ProviderSelector
 from .asset_store import AssetStore
+from .reference_store import ReferenceStore
 
 class WetuCreativeOrchestrator:
-    def __init__(self, realism=None, media=None, assets=None):
+    def __init__(self, realism=None, media=None, assets=None, references=None):
         self.realism = realism or ProductionRealismOrchestrator()
         self.media = media
         self.selector = ProviderSelector(media) if media else None
         self.assets = assets or AssetStore()
+        self.references = references or ReferenceStore()
 
     def plan(self, *, project_id, brief, characters, world, scenes,
               production_memory=None, default_mood="natural", true_story=None):
@@ -60,16 +62,18 @@ class WetuCreativeOrchestrator:
                 continue
             rid=f"{project_id}:{item['scene_id']}:{kind}"
             prompt=f"{brief}\nScene {item['sequence']}: {item['scene_id']}"
+            auto_refs=self.references.uris_for_scene(project_id, scene_id=item["scene_id"])
             req=MediaRequest(rid, project_id, item["scene_id"], kind, prompt,
-                              provider, references or [], options or {})
+                              provider, list(dict.fromkeys((references or []) + auto_refs)), options or {})
             asset=self.media.generate(req, item["context"])
             record=self.assets.remember(asset)
+            self.references.remember_asset(record, continuity_key=f"scene:{item['scene_id']}")
             assets.append({"scene_id":item["scene_id"],"status":"generated",
                            "asset":asdict(asset),"asset_record":asdict(record)})
         return {"project_id":project_id,"brief":brief,"plan":plan,"assets":assets,
                 "provider_profiles":[asdict(p) for p in self.selector.profiles()],
                 "pipeline":{"planned":True,"qa_before_generation":True,
-                            "memory_preserved":True}}
+                            "memory_preserved":True,"visual_references_persisted":True}}
 
     def render_scene(self, *, project_id, scene, context, provider,
                      kind="image", prompt="", references=None, options=None):
