@@ -4,6 +4,8 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 from wetu_studio.creator_server import Handler
+    from wetu_studio.localization_engine import LocalizationEngine, LocalizationTrack
+    from wetu_studio.audio_pipeline import AudioRegistry, VoiceRequest
 
 
 def request(server, method, path, payload=None):
@@ -123,6 +125,40 @@ def test_project_manager_endpoints(tmp_path, monkeypatch):
     assert state.project_id == "film-1"
     assert creator_server.STATE_FILE == tmp_path / "projects" / "film-1.json"
 
+
+def test_localization_and_voice_generation_are_provider_neutral(tmp_path, monkeypatch):
+    from wetu_studio import creator_server
+    monkeypatch.setattr(creator_server, "STATE_DIR", tmp_path / "projects")
+    monkeypatch.setattr(creator_server, "STATE_FILE", tmp_path / "projects" / "demo.json")
+    creator_server.STATE = creator_server.CreatorState(project_id="demo")
+    creator_server.CORE = creator_server.CreatorApplicationCore(
+        creator_server.STATE,
+        providers={"wetu-demo": creator_server.DemoProvider()},
+        qa=creator_server.PassQA(),
+        continuity=creator_server.DemoContinuity(),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, localized = request(server, "POST", "/api/localization/line", {
+            "scene_id": "scene-1", "line_id": "l1", "speaker_id": "hero",
+            "language": "ln", "text": "Mbote na bino", "subtitle": "Mbote na bino"
+        })
+        assert status == 200
+        assert localized["line"]["language"] == "ln"
+
+        status, voice = request(server, "POST", "/api/audio/voice", {
+            "request_id": "voice-1", "scene_id": "scene-1", "speaker_id": "hero",
+            "language": "ln", "text": "Mbote na bino"
+        })
+        assert status == 200
+        assert voice["asset"]["real_audio"] is False
+        assert voice["asset"]["provider"] == "wetu-local-audio"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 def test_subtitles_are_explicitly_toggleable_and_persisted(tmp_path, monkeypatch):
     from wetu_studio import creator_server
