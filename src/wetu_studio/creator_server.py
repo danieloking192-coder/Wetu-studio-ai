@@ -373,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True, "subtitles_enabled": enabled})
                 return
 
-        if path == "/api/persistence/status":
+            if path == "/api/persistence/status":
                 self._send(200, {"ok": True, "persistent": True, "exists": STATE_FILE.exists(),
                                  "characters": len(STATE.characters), "worlds": len(STATE.worlds),
                                  "scenes": len(STATE.scenes), "generations": len(STATE.memory.generations)})
