@@ -14,6 +14,11 @@ class Character:
     visual_identity: dict[str, str] = field(default_factory=dict)
     wardrobe: list[str] = field(default_factory=list)
 
+    def validate_likeness(self) -> bool:
+        if self.identity is None:
+            return True
+        return self.identity.can_use_likeness()
+
     def is_identifiable(self) -> bool:
         return bool(self.name.strip()) and bool(self.visual_identity)
 
