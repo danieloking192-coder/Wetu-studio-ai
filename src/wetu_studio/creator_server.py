@@ -12,6 +12,7 @@ from .animation_engine import AnimationEngine, AnimationRequest, AnimationStyle
 from .fan_film_pipeline import FanFilmPipeline
 from .scriptural_universe import ScripturalSource, ScripturalUniverse, SourceClass, FidelityMode, ScripturalRealismQA
 from .scriptural_catalog import catalog_summary, story_manifest
+from .mature_policy import MatureAccess, MatureRequest, MaturePolicy, decision_json
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -38,6 +39,7 @@ ANIMATION = AnimationEngine()
 FAN_PIPELINE = None
 SCRIPTURAL = None
 SCRIPTURAL_QA = ScripturalRealismQA()
+MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
 def _jsonable(value):
@@ -73,6 +75,7 @@ class Handler(BaseHTTPRequestHandler):
                               "events": STATE.memory.events[-30:],
                               "universe": {"production_id": UNIVERSE.production_id, "title": UNIVERSE.title, "mode": UNIVERSE.mode.value,
                                            "scriptural": _jsonable(SCRIPTURAL),
+                                           "mature": {"mode": "MATURE_18_PLUS", "policy_version": "1.0"},
                                            "character_references": [_jsonable(x) for x in UNIVERSE.character_references],
                                            "original_universe_id": UNIVERSE.original_universe_id,
                                            "provenance": list(UNIVERSE.provenance)}})
@@ -95,6 +98,10 @@ class Handler(BaseHTTPRequestHandler):
                     UNIVERSE.attach_original_universe(body["original_universe_id"])
                 issues = UNIVERSE.validate()
                 self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(UNIVERSE)}); return
+            if path == "/api/mature/access":
+                request=MatureRequest(MatureAccess(body.get("access","unverified")), bool(body.get("all_characters_adult",False)), bool(body.get("consent_confirmed",False)), bool(body.get("real_person",False)), bool(body.get("explicit",False)), bool(body.get("ambiguous_age",False)))
+                decision=MATURE_POLICY.evaluate(request)
+                self._send(200, decision_json(decision)); return
             if path == "/api/scriptural-catalog":
                 if body.get("story_id"):
                     self._send(200, story_manifest(body["story_id"]))
