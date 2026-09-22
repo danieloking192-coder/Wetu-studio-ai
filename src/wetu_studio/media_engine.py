@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
 from urllib.request import Request, urlopen
+from .video_quality import VideoQualityEngine
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -86,15 +87,23 @@ def provider_from_environment(prefix: str = "WETU_MEDIA") -> HttpMediaProvider |
 class MediaRegistry:
     def __init__(self, providers: dict[str, MediaProvider] | None = None):
         self.providers = providers or {"wetu-local": LocalMediaProvider()}
+        self.video_quality = VideoQualityEngine()
     def register(self, provider: MediaProvider) -> None:
         self.providers[provider.name] = provider
     def generate(self, request: MediaRequest, context: dict[str, Any]) -> MediaAsset:
         provider = self.providers.get(request.provider)
         if provider is None: raise ValueError(f"unknown media provider: {request.provider}")
         if request.kind not in provider.capabilities: raise ValueError(f"provider {request.provider} does not support {request.kind}")
+        quality_target = None
+        if request.kind == "video":
+            quality_target = self.video_quality.target(request.options)
         result = provider.generate(request, context)
+        metadata = {"request": request.options, "provider_result": result,
+                    "references": list(request.references), "real_media": bool(result.get("real_media", True))}
+        if quality_target is not None:
+            metadata["video_quality_target"] = quality_target
+            metadata["video_quality_compliant"] = not self.video_quality.validate_output(result, quality_target)
         return MediaAsset(request.request_id, request.project_id, request.scene_id,
                           request.kind, request.provider, str(result.get("model","unknown")),
                           str(result.get("uri", result.get("asset_url",""))), "ready",
-                          {"request": request.options, "provider_result": result,
-                           "references": list(request.references), "real_media": bool(result.get("real_media", True))})
+                          metadata)
