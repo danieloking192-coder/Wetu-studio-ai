@@ -109,3 +109,16 @@ def test_creator_api_end_to_end_production_flow():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_project_manager_endpoints(tmp_path, monkeypatch):
+    from wetu_studio import creator_server
+    monkeypatch.setattr(creator_server, "STATE_DIR", tmp_path / "projects")
+    monkeypatch.setattr(creator_server, "PROJECT_INDEX", tmp_path / "projects.json")
+    creator_server._save_projects([{"project_id": "demo", "title": "Demo"}])
+    projects = creator_server._list_projects()
+    assert projects[0]["project_id"] == "demo"
+    creator_server._save_projects(projects + [{"project_id": "film-1", "title": "Film 1"}])
+    state = creator_server._activate_project("film-1")
+    assert state.project_id == "film-1"
+    assert creator_server.STATE_FILE == tmp_path / "projects" / "film-1.json"
