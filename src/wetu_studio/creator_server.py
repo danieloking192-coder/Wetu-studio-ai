@@ -15,6 +15,7 @@ from .scriptural_catalog import catalog_summary, story_manifest
 from .mature_policy import MatureAccess, MatureRequest, MaturePolicy, decision_json
 from .scriptural_production import build_scriptural_production
 from .scriptural_entity_catalog import CATALOG
+from .emotion_atmosphere import EmotionAtmosphereEngine
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -41,6 +42,7 @@ ANIMATION = AnimationEngine()
 FAN_PIPELINE = None
 SCRIPTURAL = None
 SCRIPTURAL_QA = ScripturalRealismQA()
+EMOTION_ATMOSPHERE = EmotionAtmosphereEngine()
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
@@ -110,6 +112,20 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/scriptural-production":
                 production=build_scriptural_production(body["story_id"], FidelityMode(body.get("fidelity","historical_cinematic")))
                 self._send(200, production); return
+            if path == "/api/emotion-atmosphere":
+                scene = EMOTION_ATMOSPHERE.build(
+                    scene_id=body["scene_id"],
+                    mood=body.get("mood", "natural"),
+                    beats=body.get("emotional_beats", body.get("beats", [])),
+                    atmosphere=body.get("atmosphere", {}),
+                    sensory_focus=body.get("sensory_focus", []),
+                    camera_guidance=body.get("camera_guidance", []),
+                    continuity_notes=body.get("continuity_notes", []),
+                    source_vs_interpretation=body.get("source_vs_interpretation", "artistic_direction"),
+                )
+                issues = EMOTION_ATMOSPHERE.validate(scene)
+                self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)})
+                return
             if path == "/api/mature/access":
                 request=MatureRequest(MatureAccess(body.get("access","unverified")), bool(body.get("all_characters_adult",False)), bool(body.get("consent_confirmed",False)), bool(body.get("real_person",False)), bool(body.get("explicit",False)), bool(body.get("ambiguous_age",False)))
                 decision=MATURE_POLICY.evaluate(request)
