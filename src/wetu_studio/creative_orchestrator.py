@@ -78,8 +78,7 @@ class WetuCreativeOrchestrator:
                 continue
 
             rid=f"{project_id}:{item['scene_id']}:{kind}"
-            prompt=f"{brief}
-Scene {item['sequence']}: {item['scene_id']}"
+            prompt=f"{brief}\\nScene {item['sequence']}: {item['scene_id']}"
             req=MediaRequest(rid, project_id, item["scene_id"], kind, prompt, provider,
                              list(dict.fromkeys((references or []) + auto_refs)), options or {})
             asset=self.media.generate(req, item["context"])
