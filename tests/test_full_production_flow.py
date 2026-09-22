@@ -48,7 +48,7 @@ def test_full_production_flow_preserves_memory_and_continuity():
         characters=[hero],
         world=world,
         scenes=scenes,
-        provider="local",
+        provider="wetu-local",
         kind="image",
         default_mood="tense",
     )
