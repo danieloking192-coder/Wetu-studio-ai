@@ -7,6 +7,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 from .creator_core import CreatorApplicationCore, CreatorState
 from .models.production import CharacterDNA, WorldDNA, SceneMemory
+from .universe_mode import UniverseMode, UniverseProduction
+from .animation_engine import AnimationEngine, AnimationRequest, AnimationStyle
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -23,10 +25,13 @@ class PassQA:
 
 class DemoContinuity:
     def check(self, *, scene, context):
-        available = {c.character_id for c in context.get("characters", [])}\n        missing = [cid for cid in scene.character_ids if cid not in available]
+        available = {c.character_id for c in context.get("characters", [])}
+        missing = [cid for cid in scene.character_ids if cid not in available]
         return {"passed": not missing, "issues": missing}
 
 STATE = CreatorState(project_id="demo")
+UNIVERSE = UniverseProduction("demo", "WETU Demo Production", UniverseMode.ORIGINAL)
+ANIMATION = AnimationEngine()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
 def _jsonable(value):
@@ -59,7 +64,11 @@ class Handler(BaseHTTPRequestHandler):
                               "worlds": [_jsonable(x) for x in STATE.worlds.values()],
                               "scenes": [_jsonable(x) for x in STATE.scenes.values()],
                               "generations": [_jsonable(x) for x in STATE.memory.generations.values()],
-                              "events": STATE.memory.events[-30:]})
+                              "events": STATE.memory.events[-30:],
+                              "universe": {"production_id": UNIVERSE.production_id, "title": UNIVERSE.title, "mode": UNIVERSE.mode.value,
+                                           "character_references": [_jsonable(x) for x in UNIVERSE.character_references],
+                                           "original_universe_id": UNIVERSE.original_universe_id,
+                                           "provenance": list(UNIVERSE.provenance)}})
             return
         self._send(404, {"error": "not found"})
 
@@ -68,6 +77,21 @@ class Handler(BaseHTTPRequestHandler):
         try:
             size = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(size) or b"{}")
+            if path == "/api/universe":
+                mode = UniverseMode(body.get("mode", "original"))
+                global UNIVERSE
+                UNIVERSE = UniverseProduction(body.get("production_id", "demo"), body.get("title", "WETU Production"), mode)
+                if mode is UniverseMode.FAN_FILM:
+                    for item in body.get("character_references", []):
+                        UNIVERSE.add_ip_character(item["character_id"], item["display_name"], item["source_work"], item.get("notes", ""))
+                elif body.get("original_universe_id"):
+                    UNIVERSE.attach_original_universe(body["original_universe_id"])
+                issues = UNIVERSE.validate()
+                self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(UNIVERSE)}); return
+            if path == "/api/animation":
+                style = AnimationStyle(**body["style"])
+                request = AnimationRequest(body["request_id"], body.get("project_id", STATE.project_id), body["scene_id"], style, body["prompt"], body.get("references", []), body.get("options", {}))
+                self._send(200, ANIMATION.build_request(request)); return
             if path == "/api/characters":
                 CORE.add_character(CharacterDNA(**body)); self._send(201, {"ok": True}); return
             if path == "/api/worlds":
