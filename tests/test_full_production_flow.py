@@ -67,3 +67,5 @@ def test_full_production_flow_preserves_memory_and_continuity():
     metadata = second_asset["asset"]["metadata"]
     assert metadata["references"]
     assert any("s1" in uri for uri in metadata["references"])
+
+# CI trigger marker: full production flow verification.
