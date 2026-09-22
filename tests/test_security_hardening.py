@@ -68,3 +68,41 @@ def test_persistence_file_permissions(tmp_path, monkeypatch):
     creator_server._persist_state(state)
     if os.name != "nt":
         assert oct(state_file.stat().st_mode & 0o777) == "0o600"
+
+
+def test_authentication_uses_bearer_token(tmp_path, monkeypatch):
+    monkeypatch.setattr(creator_server, "AUTH_TOKEN", "test-secret")
+    monkeypatch.setattr(creator_server, "_RATE_BUCKETS", {})
+    monkeypatch.setattr(creator_server, "STATE_DIR", tmp_path / "projects")
+    monkeypatch.setattr(creator_server, "STATE_FILE", tmp_path / "projects" / "demo.json")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, _, _ = req(server, "GET", "/api/state")
+        assert status == 401
+        status, _, _ = req(server, "GET", "/api/state", headers={"Authorization": "Bearer wrong"})
+        assert status == 401
+        status, _, _ = req(server, "GET", "/api/state", headers={"Authorization": "Bearer test-secret"})
+        assert status == 200
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_strict_project_id_validation():
+    for value in ("../escape", "a/b", "a\\b", " space", "-bad", "a" * 65):
+        try:
+            creator_server._project_file(value)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe project id accepted: {value!r}")
+
+
+def test_field_limits():
+    try:
+        creator_server._validate_common({"prompt": "x" * (creator_server.MAX_PROMPT_CHARS + 1)})
+    except ValueError:
+        return
+    raise AssertionError("oversized prompt accepted")
