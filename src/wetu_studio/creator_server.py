@@ -30,7 +30,13 @@ STATE = CreatorState(project_id="demo")
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
 def _jsonable(value):
-    return asdict(value) if hasattr(value, "__dataclass_fields__") else value
+    if hasattr(value, "__dataclass_fields__"):
+        return {k: _jsonable(v) for k, v in asdict(value).items()}
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, status, payload, content_type="application/json; charset=utf-8"):
