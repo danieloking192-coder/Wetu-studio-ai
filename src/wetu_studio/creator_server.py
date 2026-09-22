@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import re
+import time
+import threading
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,6 +31,14 @@ UI = ROOT / "prototype" / "creator" / "index.html"
 STATE_DIR = Path(os.environ.get("WETU_STATE_DIR", str(ROOT / ".wetu" / "projects")))
 PROJECT_INDEX = Path(os.environ.get("WETU_PROJECT_INDEX", str(ROOT / ".wetu" / "projects.json")))
 STATE_FILE = Path(os.environ.get("WETU_STATE_FILE", str(STATE_DIR / "demo.json")))
+MAX_BODY_BYTES = int(os.environ.get("WETU_MAX_BODY_BYTES", "2097152"))
+RATE_LIMIT_WINDOW = int(os.environ.get("WETU_RATE_LIMIT_WINDOW", "60"))
+RATE_LIMIT_MAX = int(os.environ.get("WETU_RATE_LIMIT_MAX", "120"))
+AUTH_TOKEN = os.environ.get("WETU_AUTH_TOKEN")
+PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+_RATE_LOCK = threading.Lock()
+_RATE_BUCKETS = {}
+
 
 def _load_persistent_state():
     state = CreatorState(project_id="demo")
@@ -49,10 +60,28 @@ def _load_persistent_state():
     return state
 
 def _project_file(project_id):
-    safe = "".join(ch for ch in str(project_id) if ch.isalnum() or ch in "-_").strip("-_")
-    if not safe:
-        raise ValueError("project_id is required")
+    safe = str(project_id).strip()
+    if not PROJECT_ID_RE.fullmatch(safe):
+        raise ValueError("invalid project_id")
     return STATE_DIR / (safe + ".json")
+
+def _secure_file(path):
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+def _rate_limited(client):
+    now = time.monotonic()
+    with _RATE_LOCK:
+        bucket = _RATE_BUCKETS.setdefault(client, [])
+        cutoff = now - RATE_LIMIT_WINDOW
+        bucket[:] = [t for t in bucket if t > cutoff]
+        if len(bucket) >= RATE_LIMIT_MAX:
+            return True
+        bucket.append(now)
+    return False
+
 
 def _list_projects():
     if not PROJECT_INDEX.exists():
@@ -70,6 +99,7 @@ def _save_projects(projects):
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(projects, handle, ensure_ascii=False, indent=2)
         os.replace(tmp, PROJECT_INDEX)
+        _secure_file(PROJECT_INDEX)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -101,6 +131,7 @@ def _persist_state(state):
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
         os.replace(tmp, STATE_FILE)
+        _secure_file(STATE_FILE)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -153,11 +184,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(raw)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.end_headers()
         self.wfile.write(raw)
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path.startswith("/api/") and _rate_limited(self.client_address[0]):
+            self._send(429, {"error": "rate limit exceeded"})
+            return
         if path in ("/", "/index.html"):
             try: self._send(200, UI.read_bytes(), "text/html; charset=utf-8")
             except FileNotFoundError: self._send(404, {"error": "creator UI not found"})
@@ -181,8 +221,25 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         try:
-            size = int(self.headers.get("Content-Length", "0"))
+            if _rate_limited(self.client_address[0]):
+                self._send(429, {"error": "rate limit exceeded"})
+                return
+            if AUTH_TOKEN and path.startswith("/api/"):
+                if self.headers.get("Authorization", "") != "Bearer " + AUTH_TOKEN:
+                    self._send(401, {"error": "authentication required"})
+                    return
+            size_header = self.headers.get("Content-Length")
+            if size_header is None:
+                self._send(411, {"error": "Content-Length required"})
+                return
+            size = int(size_header)
+            if size < 0 or size > MAX_BODY_BYTES:
+                self._send(413, {"error": "request body too large"})
+                return
             body = json.loads(self.rfile.read(size) or b"{}")
+            if not isinstance(body, dict):
+                self._send(400, {"error": "JSON object required"})
+                return
             if path == "/api/projects":
                 self._send(200, {"ok": True, "active_project_id": STATE.project_id, "projects": _list_projects()})
                 return
@@ -205,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True, "project_id": STATE.project_id})
                 return
             if path == "/api/persistence/status":
-                self._send(200, {"ok": True, "persistent": True, "state_file": str(STATE_FILE), "exists": STATE_FILE.exists(),
+                self._send(200, {"ok": True, "persistent": True, "exists": STATE_FILE.exists(),
                                  "characters": len(STATE.characters), "worlds": len(STATE.worlds),
                                  "scenes": len(STATE.scenes), "generations": len(STATE.memory.generations)})
                 return
@@ -400,6 +457,7 @@ class Handler(BaseHTTPRequestHandler):
                 CORE.add_scene(SceneMemory(**body)); _persist_state(STATE); self._send(201, {"ok": True}); return
             if path == "/api/generate":
                 result = CORE.generate(**body)
+                _persist_state(STATE)
                 self._send(200, _jsonable(result)); return
             self._send(404, {"error": "not found"})
         except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
