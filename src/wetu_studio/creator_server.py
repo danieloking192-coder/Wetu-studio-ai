@@ -9,6 +9,7 @@ from .creator_core import CreatorApplicationCore, CreatorState
 from .models.production import CharacterDNA, WorldDNA, SceneMemory
 from .universe_mode import UniverseMode, UniverseProduction
 from .animation_engine import AnimationEngine, AnimationRequest, AnimationStyle
+from .fan_film_pipeline import FanFilmPipeline
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -32,6 +33,7 @@ class DemoContinuity:
 STATE = CreatorState(project_id="demo")
 UNIVERSE = UniverseProduction("demo", "WETU Demo Production", UniverseMode.ORIGINAL)
 ANIMATION = AnimationEngine()
+FAN_PIPELINE = None
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
 def _jsonable(value):
@@ -88,6 +90,35 @@ class Handler(BaseHTTPRequestHandler):
                     UNIVERSE.attach_original_universe(body["original_universe_id"])
                 issues = UNIVERSE.validate()
                 self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(UNIVERSE)}); return
+            if path == "/api/fan-film/start":
+                global FAN_PIPELINE
+                if UNIVERSE.mode is not UniverseMode.FAN_FILM:
+                    self._send(400, {"error": "Select FAN_FILM mode first"}); return
+                FAN_PIPELINE = FanFilmPipeline(UNIVERSE); FAN_PIPELINE.start()
+                self._send(200, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+            if path == "/api/fan-film/scene":
+                if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
+                FAN_PIPELINE.add_scene(body["scene_id"], body.get("title", body["scene_id"]), int(body["duration_ms"]), body.get("character_ids", []))
+                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+            if path == "/api/fan-film/animation":
+                if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
+                FAN_PIPELINE.add_animation_request(body)
+                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+            if path == "/api/fan-film/audio":
+                if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
+                FAN_PIPELINE.add_audio_request(body)
+                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+            if path == "/api/fan-film/timeline":
+                if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
+                FAN_PIPELINE.add_timeline_item(body)
+                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+            if path == "/api/fan-film/qa":
+                if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
+                FAN_PIPELINE.add_qa(body)
+                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+            if path == "/api/fan-film/export":
+                if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
+                self._send(200, FAN_PIPELINE.export_manifest()); return
             if path == "/api/animation":
                 style = AnimationStyle(**body["style"])
                 request = AnimationRequest(body["request_id"], body.get("project_id", STATE.project_id), body["scene_id"], style, body["prompt"], body.get("references", []), body.get("options", {}))
