@@ -106,3 +106,34 @@ def test_field_limits():
     except ValueError:
         return
     raise AssertionError("oversized prompt accepted")
+
+
+def test_project_runtime_isolation_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(creator_server, "STATE_DIR", tmp_path / "projects")
+    monkeypatch.setattr(creator_server, "STATE_FILE", tmp_path / "projects" / "a.json")
+
+    creator_server.UNIVERSE = creator_server.UniverseProduction("a", "Project A", creator_server.UniverseMode.ORIGINAL)
+    creator_server.UNIVERSE.attach_original_universe("universe-a")
+    creator_server.SCRIPTURAL = None
+    creator_server.FAN_PIPELINE = None
+    creator_server._save_runtime("a")
+
+    creator_server.UNIVERSE = creator_server.UniverseProduction("b", "Project B", creator_server.UniverseMode.FAN_FILM)
+    creator_server.SCRIPTURAL = None
+    creator_server.FAN_PIPELINE = creator_server.FanFilmPipeline(creator_server.UNIVERSE)
+    creator_server.FAN_PIPELINE.start()
+    creator_server._save_runtime("b")
+
+    creator_server.UNIVERSE = creator_server.UniverseProduction("wrong", "Wrong", creator_server.UniverseMode.ORIGINAL)
+    creator_server.FAN_PIPELINE = None
+    creator_server._load_runtime("a")
+
+    assert creator_server.UNIVERSE.production_id == "a"
+    assert creator_server.UNIVERSE.original_universe_id == "universe-a"
+    assert creator_server.FAN_PIPELINE is None
+
+    creator_server._load_runtime("b")
+    assert creator_server.UNIVERSE.production_id == "b"
+    assert creator_server.UNIVERSE.mode is creator_server.UniverseMode.FAN_FILM
+    assert creator_server.FAN_PIPELINE is not None
+    assert creator_server.FAN_PIPELINE.production is creator_server.UNIVERSE
