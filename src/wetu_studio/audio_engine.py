@@ -17,7 +17,7 @@ class AudioTrack:
     sfx_refs: list[str] = field(default_factory=list)
 
 class AudioEngine:
-    SUPPORTED_LANGUAGES = {"fr", "en", "es", "pt", "ar", "sw", "ln"}
+    SUPPORTED_LANGUAGES = {"fr", "en", "es", "pt", "ar", "sw", "ln", "lua"}
     def create_track(self, track_id: str) -> AudioTrack:
         if not track_id.strip(): raise ValueError("track_id is required")
         return AudioTrack(track_id)
