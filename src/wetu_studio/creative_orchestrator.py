@@ -5,11 +5,15 @@ from typing import Any
 from .models.production import CharacterDNA, SceneMemory, WorldDNA
 from .production_realism import ProductionRealismOrchestrator
 from .media_engine import MediaRegistry, MediaRequest
+from .provider_registry import ProviderSelector
+from .asset_store import AssetStore
 
 class WetuCreativeOrchestrator:
-    def __init__(self, realism=None, media=None):
+    def __init__(self, realism=None, media=None, assets=None):
         self.realism = realism or ProductionRealismOrchestrator()
         self.media = media
+        self.selector = ProviderSelector(media) if media else None
+        self.assets = assets or AssetStore()
 
     def plan(self, *, project_id, brief, characters, world, scenes,
               production_memory=None, default_mood="natural", true_story=None):
@@ -44,6 +48,7 @@ class WetuCreativeOrchestrator:
                 options=None):
         if self.media is None:
             raise ValueError("media registry is required for production")
+        self.selector.require(provider, kind)
         plan=self.plan(project_id=project_id, brief=brief, characters=characters,
                        world=world, scenes=scenes, production_memory=production_memory,
                        default_mood=default_mood, true_story=true_story)
@@ -58,9 +63,11 @@ class WetuCreativeOrchestrator:
             req=MediaRequest(rid, project_id, item["scene_id"], kind, prompt,
                               provider, references or [], options or {})
             asset=self.media.generate(req, item["context"])
+            record=self.assets.remember(asset)
             assets.append({"scene_id":item["scene_id"],"status":"generated",
-                           "asset":asdict(asset)})
+                           "asset":asdict(asset),"asset_record":asdict(record)})
         return {"project_id":project_id,"brief":brief,"plan":plan,"assets":assets,
+                "provider_profiles":[asdict(p) for p in self.selector.profiles()],
                 "pipeline":{"planned":True,"qa_before_generation":True,
                             "memory_preserved":True}}
 
