@@ -16,6 +16,7 @@ from .mature_policy import MatureAccess, MatureRequest, MaturePolicy, decision_j
 from .scriptural_production import build_scriptural_production
 from .scriptural_entity_catalog import CATALOG
 from .emotion_atmosphere import EmotionAtmosphereEngine
+from .true_story_realism import TrueStoryRealismEngine, TrueStoryMode
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -43,6 +44,7 @@ FAN_PIPELINE = None
 SCRIPTURAL = None
 SCRIPTURAL_QA = ScripturalRealismQA()
 EMOTION_ATMOSPHERE = EmotionAtmosphereEngine()
+TRUE_STORY_REALISM = TrueStoryRealismEngine()
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
@@ -125,6 +127,22 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 issues = EMOTION_ATMOSPHERE.validate(scene)
                 self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)})
+                return
+            if path == "/api/true-story-realism":
+                scene = TRUE_STORY_REALISM.build(
+                    scene_id=body["scene_id"],
+                    event=body["event"],
+                    mode=TrueStoryMode(body.get("mode", "documentary_realism")),
+                    facts=body.get("facts", []),
+                    emotional_context=body.get("emotional_context", {}),
+                    environmental_context=body.get("environmental_context", {}),
+                    dialogue=body.get("dialogue", []),
+                    internal_thoughts=body.get("internal_thoughts", []),
+                    victim_survivor_handling=body.get("victim_survivor_handling", {}),
+                    cinematic_direction=body.get("cinematic_direction", {}),
+                )
+                issues = TRUE_STORY_REALISM.validate(scene)
+                self._send(200, {"ok": not issues, "issues": issues, "scene": TRUE_STORY_REALISM.to_dict(scene)})
                 return
             if path == "/api/mature/access":
                 request=MatureRequest(MatureAccess(body.get("access","unverified")), bool(body.get("all_characters_adult",False)), bool(body.get("consent_confirmed",False)), bool(body.get("real_person",False)), bool(body.get("explicit",False)), bool(body.get("ambiguous_age",False)))
