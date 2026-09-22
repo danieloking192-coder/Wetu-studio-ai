@@ -137,3 +137,12 @@ def test_project_runtime_isolation_roundtrip(tmp_path, monkeypatch):
     assert creator_server.UNIVERSE.mode is creator_server.UniverseMode.FAN_FILM
     assert creator_server.FAN_PIPELINE is not None
     assert creator_server.FAN_PIPELINE.production is creator_server.UNIVERSE
+
+
+def test_state_lock_is_reentrant():
+    assert creator_server._STATE_LOCK.acquire()
+    try:
+        assert creator_server._STATE_LOCK.acquire()
+        creator_server._STATE_LOCK.release()
+    finally:
+        creator_server._STATE_LOCK.release()
