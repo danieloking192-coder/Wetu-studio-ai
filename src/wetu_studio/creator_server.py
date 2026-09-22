@@ -29,6 +29,7 @@ from .media_engine import MediaRegistry, MediaRequest, provider_from_environment
 from .subtitle_engine import SubtitleEngine
 from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
+from .media_sync import MediaSyncEngine, SyncCue
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -67,6 +68,7 @@ def _load_persistent_state():
         state.memory.decisions = {x["decision_id"]: ProductionDecision(**x) for x in payload.get("decisions", [])}
         state.memory.references = payload.get("references", {})
         state.memory.events = payload.get("events", [])
+        state.memory.sync_manifests = payload.get("sync_manifests", {})
         state.subtitles_enabled = bool(payload.get("subtitles_enabled", False))
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         return CreatorState(project_id="demo")
@@ -220,6 +222,7 @@ def _persist_state(state):
         "decisions": list(state.memory.decisions.values()),
         "references": state.memory.references,
         "events": state.memory.events,
+        "sync_manifests": state.memory.sync_manifests,
         "subtitles_enabled": bool(getattr(state, "subtitles_enabled", False)),
     })
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -313,6 +316,7 @@ class Handler(BaseHTTPRequestHandler):
                               "events": STATE.memory.events[-30:],
                               "decisions": [_jsonable(x) for x in STATE.memory.decisions.values()],
                               "references": _jsonable(STATE.memory.references),
+                              "sync_manifests": _jsonable(STATE.memory.sync_manifests),
                               "subtitles_enabled": STATE.subtitles_enabled,
                               "universe": {"production_id": UNIVERSE.production_id, "title": UNIVERSE.title, "mode": UNIVERSE.mode.value,
                                            "scriptural": _jsonable(SCRIPTURAL),
@@ -412,6 +416,21 @@ class Handler(BaseHTTPRequestHandler):
                     _persist_state(STATE)
                 self._send(200, {"ok": True, "asset": asset,
                                  "real_audio": asset.get("real_audio", False)})
+                return
+
+            if path == "/api/media-sync":
+                manifest_id = body.get("manifest_id", "sync-" + str(int(time.time() * 1000)))
+                raw_cues = body.get("cues", [])
+                cues = [SyncCue(
+                    line_id=x["line_id"], start_ms=int(x["start_ms"]), end_ms=int(x["end_ms"]),
+                    speaker_id=x["speaker_id"], language=x["language"], text=x["text"],
+                    voice_request_id=x.get("voice_request_id", ""),
+                ) for x in raw_cues]
+                manifest = MediaSyncEngine().build_manifest(cues)
+                with _STATE_LOCK:
+                    STATE.memory.add_sync_manifest(manifest_id, manifest)
+                    _persist_state(STATE)
+                self._send(200, {"ok": True, "manifest_id": manifest_id, "manifest": manifest})
                 return
 
             if path == "/api/subtitles/settings":
