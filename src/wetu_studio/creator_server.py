@@ -19,6 +19,7 @@ from .emotion_atmosphere import EmotionAtmosphereEngine
 from .true_story_realism import TrueStoryRealismEngine, TrueStoryMode
 from .production_realism import ProductionRealismOrchestrator
 from .creative_orchestrator import WetuCreativeOrchestrator
+from .media_engine import MediaRegistry, MediaRequest, provider_from_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -49,6 +50,10 @@ EMOTION_ATMOSPHERE = EmotionAtmosphereEngine()
 TRUE_STORY_REALISM = TrueStoryRealismEngine()
 PRODUCTION_REALISM = ProductionRealismOrchestrator(emotion=EMOTION_ATMOSPHERE, true_story=TRUE_STORY_REALISM)
 CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM)
+MEDIA = MediaRegistry()
+ENV_MEDIA = provider_from_environment()
+if ENV_MEDIA:
+    MEDIA.register(ENV_MEDIA)
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
@@ -131,6 +136,21 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 issues = EMOTION_ATMOSPHERE.validate(scene)
                 self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)})
+                return
+            if path == "/api/media-generate":
+                request = MediaRequest(
+                    request_id=body["request_id"],
+                    project_id=body.get("project_id", STATE.project_id),
+                    scene_id=body.get("scene_id"),
+                    kind=body["kind"],
+                    prompt=body["prompt"],
+                    provider=body.get("provider", "wetu-local"),
+                    references=body.get("references", []),
+                    options=body.get("options", {}),
+                )
+                asset = MEDIA.generate(request, body.get("context", {}))
+                self._send(200, {"ok": True, "asset": _jsonable(asset),
+                                 "real_media": asset.metadata.get("real_media", False)})
                 return
             if path == "/api/creative-plan":
                 from .models.production import CharacterDNA, SceneMemory, WorldDNA
