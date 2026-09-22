@@ -10,6 +10,9 @@ Supported system languages:
 - Arabic (ar)
 - Swahili (sw)
 - Lingala (ln)
+- Tshiluba (lua)
+
+Tshiluba is represented internally by the "lua" language code so it can be carried consistently through dialogue, voice requests and subtitles.
 
 Each dialogue line retains speaker, language, voice ID and subtitle text. The audio layer uses provider adapters so voice generation can later be connected to real providers without changing production state.
 
