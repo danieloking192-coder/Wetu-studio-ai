@@ -192,7 +192,7 @@ def test_subtitle_generation_api_requires_toggle_and_persists_track(tmp_path, mo
         assert result["track"]["track_id"] == "sub-api"
         assert "WEBVTT" in result["vtt"]
         assert "Amina: Bonjour." in result["srt"]
-        assert any(e["event_type"] == "subtitle_track_created" for e in creator_server.STATE.memory.events)
+        assert any(e.get("type") == "subtitle_track_created" for e in creator_server.STATE.memory.events)
     finally:
         server.shutdown()
         server.server_close()
