@@ -6,6 +6,7 @@ import tempfile
 import re
 import time
 import threading
+import hmac
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,6 +37,11 @@ RATE_LIMIT_WINDOW = int(os.environ.get("WETU_RATE_LIMIT_WINDOW", "60"))
 RATE_LIMIT_MAX = int(os.environ.get("WETU_RATE_LIMIT_MAX", "120"))
 AUTH_TOKEN = os.environ.get("WETU_AUTH_TOKEN")
 PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+MAX_PROJECTS = int(os.environ.get("WETU_MAX_PROJECTS", "1000"))
+MAX_TITLE_CHARS = int(os.environ.get("WETU_MAX_TITLE_CHARS", "200"))
+MAX_ID_CHARS = int(os.environ.get("WETU_MAX_ID_CHARS", "128"))
+MAX_PROMPT_CHARS = int(os.environ.get("WETU_MAX_PROMPT_CHARS", "20000"))
+MAX_LIST_ITEMS = int(os.environ.get("WETU_MAX_LIST_ITEMS", "200"))
 _RATE_LOCK = threading.Lock()
 _RATE_BUCKETS = {}
 
@@ -82,6 +88,36 @@ def _rate_limited(client):
         bucket.append(now)
     return False
 
+def _authorized(handler):
+    if not AUTH_TOKEN:
+        return True
+    supplied = handler.headers.get("Authorization", "")
+    return hmac.compare_digest(supplied, "Bearer " + AUTH_TOKEN)
+
+def _bounded_string(value, name, limit):
+    if value is None:
+        return value
+    if not isinstance(value, str) or len(value) > limit:
+        raise ValueError(f"{name} exceeds allowed length")
+    return value
+
+def _validate_common(body):
+    if "project_id" in body:
+        project_id = body["project_id"]
+        if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
+            raise ValueError("invalid project_id")
+    for key in ("request_id", "scene_id", "character_id", "world_id", "generation_id"):
+        if key in body:
+            _bounded_string(body[key], key, MAX_ID_CHARS)
+    if "title" in body:
+        _bounded_string(body["title"], "title", MAX_TITLE_CHARS)
+    if "brief" in body:
+        _bounded_string(body["brief"], "brief", MAX_PROMPT_CHARS)
+    if "prompt" in body:
+        _bounded_string(body["prompt"], "prompt", MAX_PROMPT_CHARS)
+    for key in ("characters", "scenes", "references", "languages"):
+        if key in body and isinstance(body[key], list) and len(body[key]) > MAX_LIST_ITEMS:
+            raise ValueError(f"{key} contains too many items")
 
 def _list_projects():
     if not PROJECT_INDEX.exists():
@@ -93,6 +129,8 @@ def _list_projects():
         return [{"project_id": "demo", "title": "WETU Demo Production"}]
 
 def _save_projects(projects):
+    if len(projects) > MAX_PROJECTS:
+        raise ValueError("project limit reached")
     PROJECT_INDEX.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix="wetu-projects-", suffix=".json", dir=str(PROJECT_INDEX.parent))
     try:
@@ -199,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
             if _rate_limited(self.client_address[0]):
                 self._send(429, {"error": "rate limit exceeded"})
                 return
-            if AUTH_TOKEN and self.headers.get("Authorization", "") != "Bearer " + AUTH_TOKEN:
+            if not _authorized(self):
                 self._send(401, {"error": "authentication required"})
                 return
         if path in ("/", "/index.html"):
@@ -244,6 +282,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 self._send(400, {"error": "JSON object required"})
                 return
+            _validate_common(body)
             if path == "/api/projects":
                 self._send(200, {"ok": True, "active_project_id": STATE.project_id, "projects": _list_projects()})
                 return
