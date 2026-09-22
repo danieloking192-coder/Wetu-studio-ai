@@ -67,7 +67,7 @@ def test_creator_api_end_to_end_production_flow():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        status, providers = request(server, "POST", "/api/providers", {})
+        status, providers = request(server, "GET", "/api/providers")
         assert status == 200
         assert any(p["name"] == "wetu-local" for p in providers["providers"])
 
