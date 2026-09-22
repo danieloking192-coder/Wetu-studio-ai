@@ -17,4 +17,94 @@ function render(t,b){
  const metrics=[["Characters",s.characters?.length||0],["Worlds",s.worlds?.length||0],["Scenes",s.scenes?.length||0],["Generations",s.generations?.length||0]];
  const cards=data[t].map((x,i)=>'<div class="card"><div class="section-head"><h3>'+x+'</h3><span class="badge">LIVE</span></div><p class="muted">'+description(t,i)+'</p><div class="bar"><i style="width:'+([92,78,68][i%3])+'%"></i></div><div><span class="pill">Persistent</span><span class="pill">Memory-linked</span></div></div>').join("");
  ws.innerHTML='<div class="hero"><div class="hero-card"><span class="eyebrow">Production intelligence</span><h2>'+((s.project_id||"WETU Production"))+'</h2><p class="muted">One universe. Persistent identity. Continuous memory. Every creative decision remains traceable across the production.</p><div class="metric-grid">'+metrics.map(m=>'<div class="metric"><span>'+m[0]+'</span><b>'+m[1]+'</b></div>').join("")+'</div></div><div class="hero-card"><span class="eyebrow">Continuity status</span><h2>Production ready</h2><p class="muted">Character DNA · World DNA · Scene Memory · QA</p><div class="command"><button class="primary" onclick="runProduction()">Run production</button><button onclick="validateScene()">Validate</button><button onclick="mediaGenerate()">Generate</button></div></div></div><div class="grid">'+cards+'</div><div class="card" style="margin-top:14px"><div class="section-head"><div><h3>Scene Memory</h3><span class="muted">Context follows the production automatically.</span></div><span class="pill">'+(s.scenes?.length||0)+' scenes</span></div><div class="timeline">'+(s.scenes?.length?s.scenes.map((x,i)=>'<div class="shot"><b>Scene '+String(i+1).padStart(2,"0")+'</b><span class="muted">'+(x.state?.shot||"Context ready")+'</span><span class="pill">'+(x.language||"—")+'</span></div>').join(""):'<div class="shot">No scenes yet<br><span class="muted">Create your first scene</span></div>')+'</div></div>';
-}>
+}
+async function loadProjects(){
+ const r=await fetch("/api/projects"); const data=await r.json(); const sel=document.querySelector("#projectSelect");
+ sel.innerHTML=(data.projects||[]).map(p=>'<option value="'+p.project_id+'" '+(p.project_id===data.active_project_id?'selected':'')+'>'+p.title+'</option>').join("");
+ return data;
+}
+async function switchProject(projectId){
+ if(!projectId)return;
+ const r=await api("/api/projects/switch",{project_id:projectId});
+ if(!r.ok){alert(r.error||"Unable to switch project");return}
+ await loadProjects(); await loadState();
+ ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Project switched</h3><p class="muted">Active workspace: '+projectId+'</p></div>');
+}
+async function newProject(){
+ const titleValue=prompt("Project name");
+ if(!titleValue)return;
+ const projectId=titleValue.toLowerCase().trim().replace(/[^a-z0-9_-]+/g,"-").replace(/^-+|-+$/g,"");
+ if(!projectId){alert("Invalid project name");return}
+ const r=await api("/api/projects/create",{project_id:projectId,title:titleValue});
+ if(!r.ok){alert(r.error||"Unable to create project");return}
+ await loadProjects(); await loadState();
+ ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>New WETU project</h3><p class="muted">'+titleValue+' · isolated production memory ready.</p><span class="pill">Character DNA</span><span class="pill">World DNA</span><span class="pill">Scene Memory</span><span class="pill">Production Memory</span></div>');
+}
+
+async function api(path, body){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});return r.json()}
+async function loadState(){const r=await fetch("/api/state");const s=await r.json();window.lastState=s;sub.textContent="Project "+s.project_id+" · "+s.characters.length+" characters · "+s.worlds.length+" worlds · "+s.scenes.length+" scenes · "+s.generations.length+" generations · Mode: "+(s.universe?.mode||"original");return s}
+async function fanFilmSetup(){
+ const refs=[
+  {character_id:"naruto-uzumaki",display_name:"Naruto Uzumaki",source_work:"Naruto Shippuden"},
+  {character_id:"sasuke-uchiha",display_name:"Sasuke Uchiha",source_work:"Naruto Shippuden"},
+  {character_id:"sakura-haruno",display_name:"Sakura Haruno",source_work:"Naruto Shippuden"},
+  {character_id:"kakashi-hatake",display_name:"Kakashi Hatake",source_work:"Naruto Shippuden"}];
+ const r=await api("/api/universe",{production_id:"naruto-short-001",title:"Naruto Shippuden — WETU Fan Short",mode:"fan_film",character_references:refs});
+ ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>FAN FILM</h3><p class="muted">4 personnages référencés · provenance enregistrée · univers original isolé.</p></div>'); loadState();
+}
+async function originalSetup(){
+ const r=await api("/api/universe",{production_id:"wetu-original-001",title:"WETU Original Universe",mode:"original",original_universe_id:"universe-wetu-001"});
+ ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>ORIGINAL UNIVERSE</h3><p class="muted">Univers WETU indépendant · prêt pour personnages, clans, pouvoirs, villes, saisons et épisodes.</p></div>'); loadState();
+}
+async function animationRequest(){
+ const s=await loadState(), sceneId=s.scenes[0]?.scene_id||"scene-01";
+ const body={request_id:"anim-"+Date.now(),project_id:s.project_id,scene_id:sceneId,style:{style_id:"wetu-anime-cinematic",medium:"anime",visual_language:"original shonen-inspired visual language",camera_language:"dynamic cinematic framing",motion_language:"expressive combat motion",lighting_language:"dramatic volumetric light",notes:{universe_mode:s.universe?.mode||"original"}},prompt:"Animated cinematic scene using the current production memory.",references:[],options:{fps:24}};
+ const r=await api("/api/animation",body);
+ ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Animation Request</h3><div class="result muted">'+JSON.stringify(r,null,2)+'</div></div>');
+}
+async function mediaGenerate(){
+  const sceneId=(await loadState()).scenes[0]?.scene_id;
+  if(!sceneId){ws.insertAdjacentHTML("afterbegin",`<div class="card"><h3>No scene</h3><p class="muted">Create or run the demo first.</p></div>`);return}
+  ws.insertAdjacentHTML("afterbegin",`<div class="card"><h3>Media Generation</h3><div class="form"><select id="mk"><option>image</option><option>video</option><option>audio</option></select><select id="mp"><option value="wetu-local">wetu-local</option></select><textarea id="mPrompt" rows="3">Cinematic production asset using the current Character DNA, World DNA and Scene Memory.</textarea><button onclick="runMedia()">Generate</button><div id="mediaResult" class="result muted"></div></div></div>`);
+}
+async function runMedia(){
+ const s=await loadState(), sceneId=s.scenes[0]?.scene_id;
+ const body={request_id:"media-"+Date.now(),scene_id:sceneId,kind:document.querySelector("#mk").value,provider:document.querySelector("#mp").value,prompt:document.querySelector("#mPrompt").value,references:[],options:{}};
+ const r=await api("/api/media-generate",body);document.querySelector("#mediaResult").textContent=JSON.stringify(r,null,2);loadState();
+}
+async function runProduction(){
+ const s=await loadState();
+ if(!s.scenes.length||!s.characters.length||!s.worlds.length){
+   ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Production blocked</h3><p class="muted">Character DNA, World DNA and at least one Scene are required.</p></div>'); return;
+ }
+ const characters=s.characters, world=s.worlds[0];
+ const scenes=s.scenes.map(x=>({scene_id:x.scene_id,project_id:x.project_id,sequence:x.sequence,character_ids:x.character_ids,world_id:x.world_id,language:x.language,state:x.state}));
+ const brief="Produce the current WETU project using persistent Character DNA, World DNA, Scene Memory and Production Memory.";
+ try{
+   const plan=await api("/api/creative-plan",{project_id:s.project_id,brief,characters,world,scenes,production_memory:{events:s.events,generations:s.generations,decisions:s.decisions,references:s.references},default_mood:"natural"});
+   if(!plan.ok){throw new Error(JSON.stringify(plan.issues||plan));}
+   const produced=await api("/api/produce",{project_id:s.project_id,brief,characters,world,scenes,production_memory:{events:s.events,generations:s.generations},provider:"wetu-local",kind:"image",default_mood:"natural",references:[],options:{}});
+   ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Production Orchestrator</h3><p class="muted">Plan: READY · Production: '+(produced.ok?"READY":"BLOCKED")+'</p><div class="result muted">'+JSON.stringify({plan:plan.plan,production:produced.production},null,2)+'</div></div>');
+   loadState();
+ }catch(e){ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Production blocked</h3><p class="muted">'+e.message+'</p></div>')}
+}
+async function validateScene(){
+ const s=await loadState(), sceneId=s.scenes[0]?.scene_id;
+ if(!sceneId){ws.insertAdjacentHTML("afterbegin",`<div class="card"><h3>No scene</h3><p class="muted">Create or run the demo first.</p></div>`);return}
+ const r=await api("/api/production-realism",{scene_id:sceneId,mood:"natural",emotional_beats:[],atmosphere:{},sensory_focus:[],camera_guidance:[]});
+ ws.insertAdjacentHTML("afterbegin",`<div class="card"><h3>Realism & Continuity Validation</h3><p class="muted">${r.ok?"PASS":"BLOCKED"} · ${r.issues?.length||0} issue(s)</p><div class="result muted">${JSON.stringify(r.issues||[],null,2)}</div></div>`);
+}
+async function demoFlow(){
+  try{
+    await api("/api/characters",{character_id:"amina",name:"Amina",face:{identity:"persistent"},wardrobe:{outfit:"blue dress"},traits:["calm","determined"]});
+    await api("/api/worlds",{world_id:"kinshasa",name:"Kinshasa",geography:{city:"Kinshasa"},architecture:{style:"urban"},landmarks:["city streets"]});
+    await api("/api/scenes",{scene_id:"scene-01",project_id:(window.lastState?.project_id||"demo"),sequence:1,character_ids:["amina"],world_id:"kinshasa",language:"fr",state:{shot:"wide cinematic"}});
+    const g=await api("/api/generate",{scene_id:"scene-01",provider:"wetu-demo",kind:"image",prompt:"A cinematic street scene in Kinshasa with Amina.",generation_id:"gen-"+Date.now()});
+    const s=await loadState(); ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Live Creator Core</h3><p class="muted">Generation: '+g.status+' · QA: '+(g.qa?.passed?"PASS":"BLOCKED")+'</p><span class="pill">Character DNA</span><span class="pill">World DNA</span><span class="pill">Scene Memory</span><span class="pill">Production Memory</span></div>');
+  }catch(e){ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>API error</h3><p class="muted">'+e.message+'</p></div>')}
+}
+loadProjects().then(()=>loadState()).catch(()=>{});
+function description(t,i){const d={Characters:["Persistent identity for face, body, hair, eyes, wardrobe and voice.","Reference consistency and version history.","Reusable wardrobe and voice profile."],"World / City":["Persistent world identity.","Cities, neighborhoods and locations.","Architecture, materials and landmarks."],QA:["Checks identity and continuity before/after generation.","Checks anatomy, materials, light, camera and motion.","Structured findings before export."]};return (d[t]||["Shared project state and workflow control.","Linked production information.","Traceable versions and decisions."])[i]}
+async function createScene(){const id="scene-"+Date.now();const body={scene_id:id,project_id:(window.lastState?.project_id||"demo"),sequence:Date.now(),character_ids:["amina"],world_id:"kinshasa",language:"fr",state:{shot:"cinematic"}};const r=await api("/api/scenes",body);ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Scene created</h3><p class="muted">'+id+' · '+(r.ok?"ready":"error")+'</p></div>');loadState()}
+async function exportState(){const s=await loadState();const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="wetu-production-state.json";a.click();URL.revokeObjectURL(a.href)}
+</script></body></html>>
