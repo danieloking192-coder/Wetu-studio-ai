@@ -45,7 +45,6 @@ MAX_LIST_ITEMS = int(os.environ.get("WETU_MAX_LIST_ITEMS", "200"))
 _RATE_LOCK = threading.Lock()
 _RATE_BUCKETS = {}
 
-
 def _load_persistent_state():
     state = CreatorState(project_id="demo")
     if not STATE_FILE.exists():
@@ -66,10 +65,9 @@ def _load_persistent_state():
     return state
 
 def _project_file(project_id):
-    safe = str(project_id).strip()
-    if not PROJECT_ID_RE.fullmatch(safe):
+    if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
         raise ValueError("invalid project_id")
-    return STATE_DIR / (safe + ".json")
+    return STATE_DIR / (project_id + ".json")
 
 def _secure_file(path):
     try:
@@ -150,7 +148,6 @@ def _activate_project(project_id):
     CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
     _persist_state(STATE)
     return STATE
-
 
 def _persist_state(state):
     payload = _jsonable({
@@ -267,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(429, {"error": "rate limit exceeded"})
                 return
             if AUTH_TOKEN and path.startswith("/api/"):
-                if self.headers.get("Authorization", "") != "Bearer " + AUTH_TOKEN:
+                if not _authorized(self):
                     self._send(401, {"error": "authentication required"})
                     return
             size_header = self.headers.get("Content-Length")
@@ -331,184 +328,102 @@ class Handler(BaseHTTPRequestHandler):
                 production=build_scriptural_production(body["story_id"], FidelityMode(body.get("fidelity","historical_cinematic")))
                 self._send(200, production); return
             if path == "/api/emotion-atmosphere":
-                scene = EMOTION_ATMOSPHERE.build(
-                    scene_id=body["scene_id"],
-                    mood=body.get("mood", "natural"),
-                    beats=body.get("emotional_beats", body.get("beats", [])),
-                    atmosphere=body.get("atmosphere", {}),
-                    sensory_focus=body.get("sensory_focus", []),
-                    camera_guidance=body.get("camera_guidance", []),
-                    continuity_notes=body.get("continuity_notes", []),
-                    source_vs_interpretation=body.get("source_vs_interpretation", "artistic_direction"),
-                )
+                scene = EMOTION_ATMOSPHERE.build(scene_id=body["scene_id"], mood=body.get("mood","natural"), beats=body.get("emotional_beats",body.get("beats",[])), atmosphere=body.get("atmosphere",{}), sensory_focus=body.get("sensory_focus",[]), camera_guidance=body.get("camera_guidance",[]), continuity_notes=body.get("continuity_notes",[]), source_vs_interpretation=body.get("source_vs_interpretation","artistic_direction"))
                 issues = EMOTION_ATMOSPHERE.validate(scene)
-                self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)})
-                return
+                self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)}); return
             if path == "/api/providers":
-                self._send(200, {"providers":[_jsonable(x) for x in CREATIVE_ORCHESTRATOR.selector.profiles()]})
-                return
+                self._send(200, {"providers":[_jsonable(x) for x in CREATIVE_ORCHESTRATOR.selector.profiles()]}); return
             if path == "/api/produce":
                 from .models.production import CharacterDNA, SceneMemory, WorldDNA
                 chars=[CharacterDNA(**x) for x in body.get("characters",[])]
                 world=WorldDNA(**body["world"])
                 scenes=[SceneMemory(**x) for x in body.get("scenes",[])]
-                result=CREATIVE_ORCHESTRATOR.produce(
-                    project_id=body["project_id"], brief=body["brief"],
-                    characters=chars, world=world, scenes=scenes,
-                    provider=body.get("provider","wetu-local"),
-                    kind=body.get("kind","image"),
-                    production_memory=body.get("production_memory",{}),
-                    default_mood=body.get("default_mood","natural"),
-                    true_story=body.get("true_story"),
-                    references=body.get("references",[]),
-                    options=body.get("options",{}),
-                )
-                self._send(200, {"ok":True,"production":_jsonable(result)})
-                return
+                result=CREATIVE_ORCHESTRATOR.produce(project_id=body["project_id"], brief=body["brief"], characters=chars, world=world, scenes=scenes, provider=body.get("provider","wetu-local"), kind=body.get("kind","image"), production_memory=body.get("production_memory",{}), default_mood=body.get("default_mood","natural"), true_story=body.get("true_story"), references=body.get("references",[]), options=body.get("options",{}))
+                self._send(200, {"ok":True,"production":_jsonable(result)}); return
             if path == "/api/media-generate":
-                request = MediaRequest(
-                    request_id=body["request_id"],
-                    project_id=body.get("project_id", STATE.project_id),
-                    scene_id=body.get("scene_id"),
-                    kind=body["kind"],
-                    prompt=body["prompt"],
-                    provider=body.get("provider", "wetu-local"),
-                    references=body.get("references", []),
-                    options=body.get("options", {}),
-                )
+                request = MediaRequest(request_id=body["request_id"], project_id=body.get("project_id",STATE.project_id), scene_id=body.get("scene_id"), kind=body["kind"], prompt=body["prompt"], provider=body.get("provider","wetu-local"), references=body.get("references",[]), options=body.get("options",{}))
                 asset = MEDIA.generate(request, body.get("context", {}))
-                self._send(200, {"ok": True, "asset": _jsonable(asset),
-                                 "real_media": asset.metadata.get("real_media", False)})
-                return
+                self._send(200, {"ok":True,"asset":_jsonable(asset),"real_media":asset.metadata.get("real_media",False)}); return
             if path == "/api/creative-plan":
                 from .models.production import CharacterDNA, SceneMemory, WorldDNA
-                characters = [CharacterDNA(**x) for x in body.get("characters", [])]
-                world = WorldDNA(**body["world"])
-                scenes = [SceneMemory(**x) for x in body.get("scenes", [])]
-                plan = CREATIVE_ORCHESTRATOR.plan(
-                    project_id=body["project_id"],
-                    brief=body["brief"],
-                    characters=characters,
-                    world=world,
-                    scenes=scenes,
-                    production_memory=body.get("production_memory", {}),
-                    default_mood=body.get("default_mood", "natural"),
-                )
-                self._send(200, {"ok": True, "plan": plan})
-                return
+                characters=[CharacterDNA(**x) for x in body.get("characters",[])]
+                world=WorldDNA(**body["world"])
+                scenes=[SceneMemory(**x) for x in body.get("scenes",[])]
+                plan=CREATIVE_ORCHESTRATOR.plan(project_id=body["project_id"],brief=body["brief"],characters=characters,world=world,scenes=scenes,production_memory=body.get("production_memory",{}),default_mood=body.get("default_mood","natural"))
+                self._send(200, {"ok":True,"plan":plan}); return
             if path == "/api/production-realism":
-                scene_id = body["scene_id"]
-                scene = STATE.scenes.get(scene_id)
-                if scene is None:
-                    raise ValueError(f"unknown scene: {scene_id}")
-                characters = [
-                    STATE.characters[cid]
-                    for cid in scene.character_ids
-                    if cid in STATE.characters
-                ]
-                world = STATE.worlds.get(scene.world_id) if scene.world_id else None
-                context = PRODUCTION_REALISM.build(
-                    scene_id=scene_id,
-                    scene=scene,
-                    characters=characters,
-                    world=world,
-                    production_context=CORE.build_context(scene_id),
-                    mood=body.get("mood", "natural"),
-                    emotional_beats=body.get("emotional_beats", body.get("beats", [])),
-                    atmosphere=body.get("atmosphere", {}),
-                    sensory_focus=body.get("sensory_focus", []),
-                    camera_guidance=body.get("camera_guidance", []),
-                    true_story=body.get("true_story"),
-                )
-                issues = PRODUCTION_REALISM.validate(context)
-                self._send(200, {"ok": not issues, "issues": issues, "context": context})
-                return
+                scene_id=body["scene_id"]; scene=STATE.scenes.get(scene_id)
+                if scene is None: raise ValueError(f"unknown scene: {scene_id}")
+                characters=[STATE.characters[cid] for cid in scene.character_ids if cid in STATE.characters]
+                world=STATE.worlds.get(scene.world_id) if scene.world_id else None
+                context=PRODUCTION_REALISM.build(scene_id=scene_id,scene=scene,characters=characters,world=world,production_context=CORE.build_context(scene_id),mood=body.get("mood","natural"),emotional_beats=body.get("emotional_beats",body.get("beats",[])),atmosphere=body.get("atmosphere",{}),sensory_focus=body.get("sensory_focus",[]),camera_guidance=body.get("camera_guidance",[]),true_story=body.get("true_story"))
+                issues=PRODUCTION_REALISM.validate(context)
+                self._send(200, {"ok":not issues,"issues":issues,"context":context}); return
             if path == "/api/true-story-realism":
-                scene = TRUE_STORY_REALISM.build(
-                    scene_id=body["scene_id"],
-                    event=body["event"],
-                    mode=TrueStoryMode(body.get("mode", "documentary_realism")),
-                    facts=body.get("facts", []),
-                    emotional_context=body.get("emotional_context", {}),
-                    environmental_context=body.get("environmental_context", {}),
-                    dialogue=body.get("dialogue", []),
-                    internal_thoughts=body.get("internal_thoughts", []),
-                    victim_survivor_handling=body.get("victim_survivor_handling", {}),
-                    cinematic_direction=body.get("cinematic_direction", {}),
-                )
-                issues = TRUE_STORY_REALISM.validate(scene)
-                self._send(200, {"ok": not issues, "issues": issues, "scene": TRUE_STORY_REALISM.to_dict(scene)})
-                return
+                scene=TRUE_STORY_REALISM.build(scene_id=body["scene_id"],event=body["event"],mode=TrueStoryMode(body.get("mode","documentary_realism")),facts=body.get("facts",[]),emotional_context=body.get("emotional_context",{}),environmental_context=body.get("environmental_context",{}),dialogue=body.get("dialogue",[]),internal_thoughts=body.get("internal_thoughts",[]),victim_survivor_handling=body.get("victim_survivor_handling",{}),cinematic_direction=body.get("cinematic_direction",{}))
+                issues=TRUE_STORY_REALISM.validate(scene)
+                self._send(200, {"ok":not issues,"issues":issues,"scene":TRUE_STORY_REALISM.to_dict(scene)}); return
             if path == "/api/mature/access":
-                request=MatureRequest(MatureAccess(body.get("access","unverified")), bool(body.get("all_characters_adult",False)), bool(body.get("consent_confirmed",False)), bool(body.get("real_person",False)), bool(body.get("explicit",False)), bool(body.get("ambiguous_age",False)))
-                decision=MATURE_POLICY.evaluate(request)
-                self._send(200, decision_json(decision)); return
+                request=MatureRequest(MatureAccess(body.get("access","unverified")),bool(body.get("all_characters_adult",False)),bool(body.get("consent_confirmed",False)),bool(body.get("real_person",False)),bool(body.get("explicit",False)),bool(body.get("ambiguous_age",False)))
+                decision=MATURE_POLICY.evaluate(request); self._send(200, decision_json(decision)); return
             if path == "/api/scriptural-catalog":
-                if body.get("story_id"):
-                    self._send(200, story_manifest(body["story_id"]))
-                else:
-                    self._send(200, catalog_summary())
+                if body.get("story_id"): self._send(200, story_manifest(body["story_id"]))
+                else: self._send(200, catalog_summary())
                 return
             if path == "/api/scriptural-universe":
                 global SCRIPTURAL
-                source=ScripturalSource(body["source_id"], body["source_title"], SourceClass(body["source_class"]), body.get("tradition",""), body.get("source_notes",""))
-                SCRIPTURAL=ScripturalUniverse(body["universe_id"], body["title"], source, FidelityMode(body.get("fidelity","source_faithful")), body.get("era",""), body.get("region",""), body.get("languages",[]), body.get("provenance",[]), body.get("canon_status",""), body.get("details",{}))
+                source=ScripturalSource(body["source_id"],body["source_title"],SourceClass(body["source_class"]),body.get("tradition",""),body.get("source_notes",""))
+                SCRIPTURAL=ScripturalUniverse(body["universe_id"],body["title"],source,FidelityMode(body.get("fidelity","source_faithful")),body.get("era",""),body.get("region",""),body.get("languages",[]),body.get("provenance",[]),body.get("canon_status",""),body.get("details",{}))
                 issues=SCRIPTURAL.validate()
-                self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(SCRIPTURAL)}); return
+                self._send(200 if not issues else 400, {"ok":not issues,"issues":issues,"universe":_jsonable(SCRIPTURAL)}); return
             if path == "/api/scriptural-qa":
                 if SCRIPTURAL is None: raise ValueError("Scriptural universe is not configured")
-                report=SCRIPTURAL_QA.evaluate(universe=SCRIPTURAL, scene_context=body)
-                self._send(200, _jsonable(report)); return
+                report=SCRIPTURAL_QA.evaluate(universe=SCRIPTURAL,scene_context=body)
+                self._send(200,_jsonable(report)); return
             if path == "/api/fan-film/start":
                 global FAN_PIPELINE
                 if UNIVERSE.mode is not UniverseMode.FAN_FILM:
-                    self._send(400, {"error": "Select FAN_FILM mode first"}); return
-                FAN_PIPELINE = FanFilmPipeline(UNIVERSE); FAN_PIPELINE.start()
-                self._send(200, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+                    self._send(400, {"error":"Select FAN_FILM mode first"}); return
+                FAN_PIPELINE=FanFilmPipeline(UNIVERSE); FAN_PIPELINE.start()
+                self._send(200, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/scene":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_scene(body["scene_id"], body.get("title", body["scene_id"]), int(body["duration_ms"]), body.get("character_ids", []))
-                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_scene(body["scene_id"],body.get("title",body["scene_id"]),int(body["duration_ms"]),body.get("character_ids",[]))
+                self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/animation":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_animation_request(body)
-                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_animation_request(body); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/audio":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_audio_request(body)
-                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_audio_request(body); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/timeline":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_timeline_item(body)
-                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_timeline_item(body); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/qa":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                FAN_PIPELINE.add_qa(body)
-                self._send(201, {"ok": True, "pipeline": _jsonable(FAN_PIPELINE)}); return
+                FAN_PIPELINE.add_qa(body); self._send(201, {"ok":True,"pipeline":_jsonable(FAN_PIPELINE)}); return
             if path == "/api/fan-film/export":
                 if FAN_PIPELINE is None: raise ValueError("Fan-film pipeline is not started")
-                self._send(200, FAN_PIPELINE.export_manifest()); return
+                self._send(200,FAN_PIPELINE.export_manifest()); return
             if path == "/api/animation":
-                style = AnimationStyle(**body["style"])
-                request = AnimationRequest(body["request_id"], body.get("project_id", STATE.project_id), body["scene_id"], style, body["prompt"], body.get("references", []), body.get("options", {}))
-                self._send(200, ANIMATION.build_request(request)); return
+                style=AnimationStyle(**body["style"])
+                request=AnimationRequest(body["request_id"],body.get("project_id",STATE.project_id),body["scene_id"],style,body["prompt"],body.get("references",[]),body.get("options",{}))
+                self._send(200,ANIMATION.build_request(request)); return
             if path == "/api/characters":
-                CORE.add_character(CharacterDNA(**body)); _persist_state(STATE); self._send(201, {"ok": True}); return
+                CORE.add_character(CharacterDNA(**body)); _persist_state(STATE); self._send(201,{"ok":True}); return
             if path == "/api/worlds":
-                CORE.add_world(WorldDNA(**body)); _persist_state(STATE); self._send(201, {"ok": True}); return
+                CORE.add_world(WorldDNA(**body)); _persist_state(STATE); self._send(201,{"ok":True}); return
             if path == "/api/scenes":
-                CORE.add_scene(SceneMemory(**body)); _persist_state(STATE); self._send(201, {"ok": True}); return
+                CORE.add_scene(SceneMemory(**body)); _persist_state(STATE); self._send(201,{"ok":True}); return
             if path == "/api/generate":
-                result = CORE.generate(**body)
-                _persist_state(STATE)
-                self._send(200, _jsonable(result)); return
-            self._send(404, {"error": "not found"})
-        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
-            self._send(400, {"error": str(exc)})
+                result=CORE.generate(**body); _persist_state(STATE); self._send(200,_jsonable(result)); return
+            self._send(404, {"error":"not found"})
+        except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
+            self._send(400, {"error":str(exc)})
 
 def serve(host="127.0.0.1", port=8787):
     print(f"WETU Creator: http://{host}:{port}")
-    ThreadingHTTPServer((host, port), Handler).serve_forever()
+    ThreadingHTTPServer((host,port),Handler).serve_forever()
 
 if __name__ == "__main__":
     serve()
