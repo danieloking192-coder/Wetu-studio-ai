@@ -31,8 +31,13 @@ class ReferenceStore:
         return record
 
     def remember_asset(self, asset_record, entity_id=None, continuity_key=None, label=""):
+        suffix = ""
+        if entity_id:
+            suffix = f":entity:{entity_id}"
+        elif continuity_key:
+            suffix = f":key:{continuity_key}"
         return self.add(ReferenceRecord(
-            reference_id=f"ref:{asset_record.asset_id}",
+            reference_id=f"ref:{asset_record.asset_id}{suffix}",
             project_id=asset_record.project_id, kind=asset_record.kind,
             uri=asset_record.uri, label=label, entity_id=entity_id,
             continuity_key=continuity_key, source_scene_id=asset_record.scene_id,
