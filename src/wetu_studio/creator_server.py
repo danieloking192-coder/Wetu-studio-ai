@@ -10,6 +10,7 @@ from .models.production import CharacterDNA, WorldDNA, SceneMemory
 from .universe_mode import UniverseMode, UniverseProduction
 from .animation_engine import AnimationEngine, AnimationRequest, AnimationStyle
 from .fan_film_pipeline import FanFilmPipeline
+from .scriptural_universe import ScripturalSource, ScripturalUniverse, SourceClass, FidelityMode, ScripturalRealismQA
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -34,6 +35,8 @@ STATE = CreatorState(project_id="demo")
 UNIVERSE = UniverseProduction("demo", "WETU Demo Production", UniverseMode.ORIGINAL)
 ANIMATION = AnimationEngine()
 FAN_PIPELINE = None
+SCRIPTURAL = None
+SCRIPTURAL_QA = ScripturalRealismQA()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
 def _jsonable(value):
@@ -68,6 +71,7 @@ class Handler(BaseHTTPRequestHandler):
                               "generations": [_jsonable(x) for x in STATE.memory.generations.values()],
                               "events": STATE.memory.events[-30:],
                               "universe": {"production_id": UNIVERSE.production_id, "title": UNIVERSE.title, "mode": UNIVERSE.mode.value,
+                                           "scriptural": _jsonable(SCRIPTURAL),
                                            "character_references": [_jsonable(x) for x in UNIVERSE.character_references],
                                            "original_universe_id": UNIVERSE.original_universe_id,
                                            "provenance": list(UNIVERSE.provenance)}})
@@ -90,6 +94,16 @@ class Handler(BaseHTTPRequestHandler):
                     UNIVERSE.attach_original_universe(body["original_universe_id"])
                 issues = UNIVERSE.validate()
                 self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(UNIVERSE)}); return
+            if path == "/api/scriptural-universe":
+                global SCRIPTURAL
+                source=ScripturalSource(body["source_id"], body["source_title"], SourceClass(body["source_class"]), body.get("tradition",""), body.get("source_notes",""))
+                SCRIPTURAL=ScripturalUniverse(body["universe_id"], body["title"], source, FidelityMode(body.get("fidelity","source_faithful")), body.get("era",""), body.get("region",""), body.get("languages",[]), body.get("provenance",[]), body.get("canon_status",""), body.get("details",{}))
+                issues=SCRIPTURAL.validate()
+                self._send(200 if not issues else 400, {"ok": not issues, "issues": issues, "universe": _jsonable(SCRIPTURAL)}); return
+            if path == "/api/scriptural-qa":
+                if SCRIPTURAL is None: raise ValueError("Scriptural universe is not configured")
+                report=SCRIPTURAL_QA.evaluate(universe=SCRIPTURAL, scene_context=body)
+                self._send(200, _jsonable(report)); return
             if path == "/api/fan-film/start":
                 global FAN_PIPELINE
                 if UNIVERSE.mode is not UniverseMode.FAN_FILM:
