@@ -82,10 +82,33 @@ async function animationRequest(){
  const r=await api("/api/animation",body);
  ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Animation Request</h3><div class="result muted">'+JSON.stringify(r,null,2)+'</div></div>');
 }
+async function loadProviders(){
+ try{
+   const r=await api("/api/providers",{});
+   window.providerProfiles=Array.isArray(r.providers)?r.providers:[];
+   return window.providerProfiles;
+ }catch(e){window.providerProfiles=[];return []}
+}
+function providerOptions(kind){
+ const profiles=window.providerProfiles||[];
+ const compatible=profiles.filter(p=>!p.capabilities||p.capabilities.includes(kind));
+ if(!compatible.length)return '<option value="auto">auto (no configured provider)</option>';
+ return compatible.map(p=>{
+   const real=p.real_media===true||p.real_audio===true;
+   const label=(p.name||"provider")+(real?" · REAL":" · manifest");
+   return '<option value="'+esc(p.name||"auto")+'">'+esc(label)+'</option>';
+ }).join("");
+}
 async function mediaGenerate(){
   const sceneId=(await loadState()).scenes[0]?.scene_id;
   if(!sceneId){ws.insertAdjacentHTML("afterbegin",`<div class="card"><h3>No scene</h3><p class="muted">Create or run the demo first.</p></div>`);return}
-  ws.insertAdjacentHTML("afterbegin",`<div class="card"><h3>Media Generation</h3><div class="form"><select id="mk"><option>image</option><option>video</option><option>audio</option></select><select id="mp"><option value="wetu-local">wetu-local</option></select><textarea id="mPrompt" rows="3">Cinematic production asset using the current Character DNA, World DNA and Scene Memory.</textarea><button onclick="runMedia()">Generate</button><div id="mediaResult" class="result muted"></div></div></div>`);
+  await loadProviders();
+  ws.insertAdjacentHTML("afterbegin",`<div class="card"><h3>Media Generation</h3><p class="muted">WETU chooses only providers exposed by the server. Real AI providers appear here automatically when credentials and capabilities are configured; no provider is hard-coded into the interface.</p><div class="form"><select id="mk" onchange="refreshProviderChoices()"><option>image</option><option>video</option><option>audio</option></select><select id="mp">${providerOptions("image")}</select><textarea id="mPrompt" rows="3">Cinematic production asset using the current Character DNA, World DNA and Scene Memory.</textarea><button class="primary" onclick="runMedia()">Generate</button><div id="mediaResult" class="result muted"></div></div></div>`);
+}
+function refreshProviderChoices(){
+ const kind=document.querySelector("#mk")?.value||"image";
+ const select=document.querySelector("#mp");
+ if(select)select.innerHTML=providerOptions(kind);
 }
 async function runMedia(){
  const s=await loadState(), sceneId=s.scenes[0]?.scene_id;
@@ -103,7 +126,7 @@ async function runProduction(){
  try{
    const plan=await api("/api/creative-plan",{project_id:s.project_id,brief,characters,world,scenes,production_memory:{events:s.events,generations:s.generations,decisions:s.decisions,references:s.references},default_mood:"natural"});
    if(!plan.ok){throw new Error(JSON.stringify(plan.issues||plan));}
-   const produced=await api("/api/produce",{project_id:s.project_id,brief,characters,world,scenes,production_memory:{events:s.events,generations:s.generations},provider:"wetu-local",kind:"image",default_mood:"natural",references:[],options:{}});
+   const produced=await api("/api/produce",{project_id:s.project_id,brief,characters,world,scenes,production_memory:{events:s.events,generations:s.generations},provider:"auto",kind:"image",default_mood:"natural",references:[],options:{}});
    ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Production Orchestrator</h3><p class="muted">Plan: READY · Production: '+(produced.ok?"READY":"BLOCKED")+'</p><div class="result muted">'+JSON.stringify({plan:plan.plan,production:produced.production},null,2)+'</div></div>');
    loadState();
  }catch(e){ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Production blocked</h3><p class="muted">'+e.message+'</p></div>')}
@@ -123,7 +146,7 @@ async function demoFlow(){
     const s=await loadState(); ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Live Creator Core</h3><p class="muted">Generation: '+g.status+' · QA: '+(g.qa?.passed?"PASS":"BLOCKED")+'</p><span class="pill">Character DNA</span><span class="pill">World DNA</span><span class="pill">Scene Memory</span><span class="pill">Production Memory</span></div>');
   }catch(e){ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>API error</h3><p class="muted">'+e.message+'</p></div>')}
 }
-loadProjects().then(()=>loadState()).catch(()=>{});
+Promise.all([loadProjects(),loadProviders(),loadState()]).catch(()=>{});
 function description(t,i){const d={Characters:["Persistent identity for face, body, hair, eyes, wardrobe and voice.","Reference consistency and version history.","Reusable wardrobe and voice profile."],"World / City":["Persistent world identity.","Cities, neighborhoods and locations.","Architecture, materials and landmarks."],QA:["Checks identity and continuity before/after generation.","Checks anatomy, materials, light, camera and motion.","Structured findings before export."]};return (d[t]||["Shared project state and workflow control.","Linked production information.","Traceable versions and decisions."])[i]}
 async function createScene(){const id="scene-"+Date.now();const s=window.lastState||{}, characterId=s.characters?.[0]?.character_id, worldId=s.worlds?.[0]?.world_id; if(!characterId||!worldId){ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Scene blocked</h3><p class="muted">Create a Character DNA and World DNA first.</p></div>');return} const body={scene_id:id,project_id:(s.project_id||"demo"),sequence:(s.scenes?.length||0)+1,character_ids:[characterId],world_id:worldId,language:"fr",state:{shot:"cinematic"}};const r=await api("/api/scenes",body);ws.insertAdjacentHTML("afterbegin",'<div class="card"><h3>Scene created</h3><p class="muted">'+id+' · '+(r.ok?"ready":"error")+'</p></div>');loadState()}
 async function exportState(){const s=await loadState();const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="wetu-production-state.json";a.click();URL.revokeObjectURL(a.href)}
