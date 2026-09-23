@@ -105,7 +105,8 @@ class MediaRegistry:
             metadata["video_quality_target"] = quality_target
             metadata["video_quality_compliant"] = not self.video_quality.validate_output(result, quality_target)
             metadata["video_delivery_target"] = delivery_target
-            metadata["video_delivery_compliant"] = not self.video_delivery.validate_delivery_output(result, delivery_target)
+            delivery_output = result.get("delivery_output", result)
+            metadata["video_delivery_compliant"] = not self.video_delivery.validate_delivery_output(delivery_output, delivery_target)
             if "duration_seconds" in result:
                 metadata["estimated_delivery_size_mb"] = self.video_delivery.estimate_size_mb(
                     float(result["duration_seconds"]), delivery_target
