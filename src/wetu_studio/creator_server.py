@@ -30,6 +30,7 @@ from .subtitle_engine import SubtitleEngine
 from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
 from .media_sync import MediaSyncEngine, SyncCue
+from .security_controls import BoundedRateLimiter, validate_content_length
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -47,8 +48,7 @@ MAX_TITLE_CHARS = int(os.environ.get("WETU_MAX_TITLE_CHARS", "200"))
 MAX_ID_CHARS = int(os.environ.get("WETU_MAX_ID_CHARS", "128"))
 MAX_PROMPT_CHARS = int(os.environ.get("WETU_MAX_PROMPT_CHARS", "20000"))
 MAX_LIST_ITEMS = int(os.environ.get("WETU_MAX_LIST_ITEMS", "200"))
-_RATE_LOCK = threading.Lock()
-_RATE_BUCKETS = {}
+_RATE_LIMITER = BoundedRateLimiter(window_seconds=RATE_LIMIT_WINDOW, max_requests=RATE_LIMIT_MAX)
 LOCALIZATION = LocalizationEngine()
 AUDIO = AudioRegistry()
 _LOCALIZATION_TRACKS = {}
@@ -134,15 +134,7 @@ def _secure_file(path):
         pass
 
 def _rate_limited(client):
-    now = time.monotonic()
-    with _RATE_LOCK:
-        bucket = _RATE_BUCKETS.setdefault(client, [])
-        cutoff = now - RATE_LIMIT_WINDOW
-        bucket[:] = [t for t in bucket if t > cutoff]
-        if len(bucket) >= RATE_LIMIT_MAX:
-            return True
-        bucket.append(now)
-    return False
+    return not _RATE_LIMITER.allow(client)
 
 def _authorized(handler):
     if not AUTH_TOKEN:
@@ -338,13 +330,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not _authorized(self):
                     self._send(401, {"error": "authentication required"})
                     return
-            size_header = self.headers.get("Content-Length")
-            if size_header is None:
-                self._send(411, {"error": "Content-Length required"})
-                return
-            size = int(size_header)
-            if size < 0 or size > MAX_BODY_BYTES:
-                self._send(413, {"error": "request body too large"})
+            try:
+                size = validate_content_length(self.headers.get("Content-Length"), MAX_BODY_BYTES)
+            except ValueError as exc:
+                message = str(exc)
+                self._send(411 if message == "Content-Length required" else 413, {"error": message})
                 return
             body = json.loads(self.rfile.read(size) or b"{}")
             if not isinstance(body, dict):
