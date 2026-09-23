@@ -325,3 +325,14 @@ def test_storekit_catalog_and_protected_entitlement():
     except Exception:
         pass
     assert ECONOMY.snapshot()["user"]["purchased_units"] == before
+
+
+def test_runtime_health_contract():
+    from pathlib import Path
+    from wetu_studio import creator_server
+    assert hasattr(creator_server, "RUNTIME_JOBS")
+    health = creator_server.MEDIA_ORCHESTRATOR.provider_health.snapshot()
+    metrics = creator_server.MEDIA_ORCHESTRATOR.metrics.snapshot()
+    assert isinstance(health, dict)
+    assert isinstance(metrics, dict)
+    assert "RuntimeJobStore" in Path(creator_server.MEDIA_ORCHESTRATOR.job_store.path).name or creator_server.MEDIA_ORCHESTRATOR.job_store.path
