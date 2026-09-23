@@ -298,6 +298,11 @@ class Handler(BaseHTTPRequestHandler):
             try: self._send(200, UI.read_bytes(), "text/html; charset=utf-8")
             except FileNotFoundError: self._send(404, {"error": "creator UI not found"})
             return
+        if path == "/manifest.webmanifest":
+            manifest = UI.parent / "manifest.webmanifest"
+            try: self._send(200, manifest.read_bytes(), "application/manifest+json; charset=utf-8")
+            except FileNotFoundError: self._send(404, {"error": "app manifest not found"})
+            return
         if path == "/api/state":
             with _STATE_LOCK:
                 snapshot = {"project_id": STATE.project_id,
