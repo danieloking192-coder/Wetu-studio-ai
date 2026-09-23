@@ -17,3 +17,6 @@ WETU separates user entitlements, administrator accounting, and real external pr
 When StoreKit is integrated, Apple IAP transactions should be validated server-side before grant_purchased() is called. Purchased IAP credits are modeled as non-expiring to respect Apple's current App Review rule for credits acquired through IAP.
 
 The economic core is therefore ready for the later StoreKit/server transaction layer without pretending that an unvalidated purchase is complete.
+
+## Verification
+The economic core is covered by unit tests and the Creator API integration suite.
