@@ -504,7 +504,6 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/providers":
                 self._send(200, {"providers":[_jsonable(x) for x in CREATIVE_ORCHESTRATOR.selector.profiles()]}); return
             if path == "/api/produce":
-                from .models.production import CharacterDNA, SceneMemory, WorldDNA
                 chars=[CharacterDNA(**x) for x in body.get("characters",[])]
                 world=WorldDNA(**body["world"])
                 scenes=[SceneMemory(**x) for x in body.get("scenes",[])]
@@ -515,7 +514,6 @@ class Handler(BaseHTTPRequestHandler):
                 asset = MEDIA.generate(request, body.get("context", {}))
                 self._send(200, {"ok":True,"asset":_jsonable(asset),"real_media":asset.metadata.get("real_media",False)}); return
             if path == "/api/creative-plan":
-                from .models.production import CharacterDNA, SceneMemory, WorldDNA
                 characters=[CharacterDNA(**x) for x in body.get("characters",[])]
                 world=WorldDNA(**body["world"])
                 scenes=[SceneMemory(**x) for x in body.get("scenes",[])]
