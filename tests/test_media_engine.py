@@ -1,6 +1,6 @@
 import unittest
 
-from wetu_studio.media_engine import MediaRegistry, MediaRequest, HttpMediaProvider
+from wetu_studio.media_engine import MediaRegistry, MediaRequest, HttpMediaProvider, MediaCoreAdapter
 
 
 class DeterministicVideoProvider:
@@ -61,3 +61,16 @@ class MediaEngineTests(unittest.TestCase):
         self.assertTrue(asset.metadata["video_delivery_compliant"])
         self.assertEqual(asset.metadata["estimated_delivery_size_mb"], 7.06)
         self.assertFalse(asset.metadata["provider_result"]["corrupt"])
+
+
+    def test_core_adapter_bridges_registry_provider(self):
+        registry = MediaRegistry()
+        adapter = MediaCoreAdapter(registry, "wetu-local")
+        result = adapter.generate(
+            kind="image",
+            prompt="bridge test",
+            context={"project_id": "p", "scene_id": "s", "generation_id": "g"},
+        )
+        self.assertEqual(result["kind"], "image")
+        self.assertFalse(result["real_media"])
+        self.assertEqual(result["asset_id"], "g")
