@@ -550,8 +550,11 @@ class Handler(BaseHTTPRequestHandler):
                 result=CREATIVE_ORCHESTRATOR.produce(project_id=body["project_id"], brief=body["brief"], characters=chars, world=world, scenes=scenes, provider=body.get("provider","wetu-local"), kind=body.get("kind","image"), production_memory=body.get("production_memory",{}), default_mood=body.get("default_mood","natural"), true_story=body.get("true_story"), references=body.get("references",[]), options=body.get("options",{}))
                 self._send(200, {"ok":True,"production":_jsonable(result)}); return
             if path == "/api/store/entitlements/grant":
-                if not ECONOMY.resolve_account("ADMIN", self.headers):
-                    self._send(403, {"error": "admin authorization required"}); return
+                try:
+                    ECONOMY.resolve_account("ADMIN", self.headers)
+                except PermissionError:
+                    self._send(403, {"ok": False, "error": "admin authorization required"})
+                    return
                 try:
                     result = STOREKIT.validate_and_grant(body)
                     self._send(200, result)
