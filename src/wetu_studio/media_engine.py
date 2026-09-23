@@ -78,6 +78,37 @@ def provider_from_environment(prefix: str = "WETU_MEDIA") -> HttpMediaProvider |
     return HttpMediaProvider(os.getenv(f"{prefix}_NAME", "wetu-http"), endpoint,
                              os.getenv(f"{prefix}_API_KEY", ""), float(os.getenv(f"{prefix}_TIMEOUT", "60")))
 
+class MediaCoreAdapter:
+    """Bridge the Creator Core provider contract to the real media registry."""
+    def __init__(self, registry: "MediaRegistry", provider_name: str):
+        self.registry = registry
+        self.provider_name = provider_name
+
+    def generate(self, *, kind: str, prompt: str, context: dict[str, Any]) -> dict[str, Any]:
+        project_id = str(context.get("project_id", "unknown"))
+        scene_id = context.get("scene_id")
+        request_id = str(context.get("generation_id", f"core-{kind}"))
+        request = MediaRequest(
+            request_id=request_id,
+            project_id=project_id,
+            scene_id=scene_id,
+            kind=kind,
+            prompt=prompt,
+            provider=self.provider_name,
+            references=list(context.get("references", [])),
+            options=dict(context.get("options", {})),
+        )
+        asset = self.registry.generate(request, context)
+        return {
+            "model": asset.model,
+            "uri": asset.uri,
+            "kind": asset.kind,
+            "real_media": asset.metadata.get("real_media", False),
+            "asset_id": asset.asset_id,
+            "metadata": asset.metadata,
+        }
+
+
 class MediaRegistry:
     def __init__(self, providers: dict[str, MediaProvider] | None = None):
         self.providers = providers or {"wetu-local": LocalMediaProvider()}
