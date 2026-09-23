@@ -28,6 +28,7 @@ from .creative_orchestrator import WetuCreativeOrchestrator
 from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, providers_from_environment
 from .media_orchestrator import MediaOrchestrator
 from .usage_control import UsageLedger
+from .economic_core import EconomicLedger, AccountType
 from .postproduction import PostProductionEngine, TimelineItem, Caption, AudioMix
 from .product_studio import ProductStudio
 from .subtitle_engine import SubtitleEngine
@@ -266,6 +267,7 @@ for provider in ENV_MEDIA:
 CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
 MEDIA_ORCHESTRATOR = MediaOrchestrator(MEDIA)
 USAGE = UsageLedger(plan=os.environ.get("WETU_DEFAULT_PLAN", "FREE"))
+ECONOMY = EconomicLedger()
 POSTPRODUCTION = PostProductionEngine()
 PRODUCT_STUDIO = ProductStudio()
 MATURE_POLICY = MaturePolicy()
@@ -537,11 +539,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok":True,"production":_jsonable(result)}); return
             if path == "/api/media-generate":
                 request = MediaRequest(request_id=body["request_id"], project_id=body.get("project_id",STATE.project_id), scene_id=body.get("scene_id"), kind=body["kind"], prompt=body["prompt"], provider=body.get("provider","auto"), references=body.get("references",[]), options=body.get("options",{}))
-                reserved_units = USAGE.reserve(request.kind, request.options)
-                job = MEDIA_ORCHESTRATOR.generate(request, body.get("context", {}), job_id=body.get("job_id"))
-                if job.status != "completed":
-                    USAGE.refund(reserved_units, request.kind)
-                payload = {"ok": job.status == "completed", "job": _jsonable(job), "status": job.status, "usage": USAGE.snapshot()}
+                account_type = ECONOMY.resolve_account(body.get("account_type"), self.headers)
+                provider_estimate = ECONOMY.estimate_provider_cost(request.kind, request.options, request.provider)
+                economic_reservation = ECONOMY.reserve(account_type, request.kind, request.options, provider_estimate)
+                reserved_units = None
+                try:
+                    if account_type is AccountType.USER:
+                        reserved_units = USAGE.reserve(request.kind, request.options)
+                    job = MEDIA_ORCHESTRATOR.generate(request, body.get("context", {}), job_id=body.get("job_id"))
+                    if job.status != "completed":
+                        if reserved_units is not None:
+                            USAGE.refund(reserved_units, request.kind)
+                        ECONOMY.refund(economic_reservation)
+                    else:
+                        ECONOMY.commit(economic_reservation)
+                except Exception:
+                    if reserved_units is not None:
+                        USAGE.refund(reserved_units, request.kind)
+                    ECONOMY.refund(economic_reservation)
+                    raise
+                payload = {"ok": job.status == "completed", "job": _jsonable(job), "status": job.status,
+                           "usage": USAGE.snapshot(), "economy": ECONOMY.snapshot()}
                 if job.asset is not None:
                     payload["asset"] = _jsonable(job.asset)
                     payload["real_media"] = bool(job.asset.metadata.get("real_media", False))
