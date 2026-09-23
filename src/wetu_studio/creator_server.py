@@ -595,8 +595,10 @@ class Handler(BaseHTTPRequestHandler):
                     CORE.add_scene(SceneMemory(**body)); _persist_state(STATE)
                 self._send(201,{"ok":True}); return
             if path == "/api/generate":
+                payload = dict(body)
+                payload.pop("project_id", None)
                 with _STATE_LOCK:
-                    result=CORE.generate(**body); _persist_state(STATE)
+                    result=CORE.generate(**payload); _persist_state(STATE)
                 self._send(200,_jsonable(result)); return
             self._send(404, {"error":"not found"})
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
