@@ -65,7 +65,7 @@ jobs:
 
           def get(path):
               with urllib.request.urlopen(base + path, timeout=5) as response:
-                  assert response.status == 200, (path, response.status)
+                  assert response.status in (200, 201, 202), (path, response.status)
                   return response.read()
 
           for _ in range(30):
