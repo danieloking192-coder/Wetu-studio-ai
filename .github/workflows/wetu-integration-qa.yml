@@ -1,4 +1,5 @@
 name: WETU Integration QA
+# Runtime verification: project-scoped character/world payload fix
 
 on:
   push:
