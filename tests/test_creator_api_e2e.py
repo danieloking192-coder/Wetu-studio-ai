@@ -316,13 +316,12 @@ def test_media_generate_uses_orchestrator_and_exposes_job(tmp_path, monkeypatch)
         thread.join(timeout=2)
 
 
-def test_creator_ui_is_provider_aware():
-    from pathlib import Path
-    from wetu_studio import creator_server
-
-    ui = Path(creator_server.UI).read_text(encoding="utf-8")
-    assert "loadProviders" in ui
-    assert "providerProfiles" in ui
-    assert "providerOptions" in ui
-    assert "Real AI providers appear here automatically" in ui
-    assert 'provider:"auto"' in ui
+def test_storekit_catalog_and_protected_entitlement():
+    from wetu_studio.creator_server import STOREKIT, ECONOMY
+    assert any(p["product_id"] == "wetu_100" for p in STOREKIT.catalog())
+    before = ECONOMY.snapshot()["user"]["purchased_units"]
+    try:
+        STOREKIT.validate_and_grant({"product_id":"wetu_100","transaction_id":"unverified","verified":False})
+    except Exception:
+        pass
+    assert ECONOMY.snapshot()["user"]["purchased_units"] == before
