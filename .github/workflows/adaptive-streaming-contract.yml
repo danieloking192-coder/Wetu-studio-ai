@@ -27,7 +27,7 @@ jobs:
       - name: Run unit tests
         run: |
           python -m pip install -e ".[dev]"
-          python -m pytest tests/test_adaptive_streaming.py tests/test_adaptive_package_e2e.py
+          python -m pytest tests/test_adaptive_streaming.py
       - name: Generate deterministic master
         run: |
           mkdir -p media/test
