@@ -16,6 +16,10 @@ def test_release_readiness_product_spine():
         root / "docs" / "ECONOMIC_CORE.md",
         root / "docs" / "STOREKIT_ENTITLEMENTS.md",
         root / "docs" / "RUNTIME_PRODUCTION_BOUNDARY.md",
+        root / "docs" / "PHOTO_TO_REALISTIC_VIDEO.md",
+        root / "docs" / "MULTILINGUAL_PRODUCTION.md",
+        root / "src" / "wetu_studio" / "character_identity.py",
+        root / "src" / "wetu_studio" / "multilingual_production.py",
     ]
     assert all(path.exists() for path in required)
 
