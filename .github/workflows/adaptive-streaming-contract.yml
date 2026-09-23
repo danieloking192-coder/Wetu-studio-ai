@@ -51,8 +51,14 @@ jobs:
           d=json.load(open("media/test/adaptive/package_manifest.json"))
           assert d["variants"] == ["mobile_saver","mobile","standard"]
           assert d["deployment_active"] is False
-          sizes = d.get("hls_variant_bytes", {})
+          from pathlib import Path
+          root = Path("media/test/adaptive/hls")
+          sizes = {}
+          for name in ("mobile_saver", "mobile", "standard"):
+              segs = sorted((root / name).glob("seg_*.ts"))
+              assert segs
+              assert all(p.stat().st_size > 0 for p in segs)
+              sizes[name] = sum(p.stat().st_size for p in segs)
           assert sizes["mobile_saver"] < sizes["mobile"] < sizes["standard"]
-          assert d.get("hls_segment_counts", {}).get("mobile_saver", 0) > 0
-          print("ADAPTIVE HLS/DASH DATA USAGE INTEGRITY: PASS")
+          print("ADAPTIVE HLS/DASH DATA USAGE INTEGRITY: PASS", sizes)
           PY
