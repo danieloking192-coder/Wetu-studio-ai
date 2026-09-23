@@ -314,3 +314,15 @@ def test_media_generate_uses_orchestrator_and_exposes_job(tmp_path, monkeypatch)
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_creator_ui_is_provider_aware():
+    from pathlib import Path
+    from wetu_studio import creator_server
+
+    ui = Path(creator_server.UI).read_text(encoding="utf-8")
+    assert "loadProviders" in ui
+    assert "providerProfiles" in ui
+    assert "providerOptions" in ui
+    assert "Real AI providers appear here automatically" in ui
+    assert 'provider:"auto"' in ui
