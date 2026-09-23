@@ -1,4 +1,5 @@
 name: WETU Integration QA
+# Full regression gate for every production-main change.
 # Runtime verification: project-scoped character/world payload fix
 
 on:
