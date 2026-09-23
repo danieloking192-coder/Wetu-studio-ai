@@ -24,7 +24,9 @@ class MediaSecurityScanner:
         if size<=0 or size>self.max_bytes: raise ValueError("media size outside security limit")
         raw=p.read_bytes(); digest=hashlib.sha256(raw).hexdigest()
         if mime_type in self.MAGIC and not any(raw.startswith(sig) for sig in self.MAGIC[mime_type]): raise ValueError("media signature does not match declared type")
-        if (not self.require_antivirus) and os.getenv("WETU_DISABLE_ANTIVIRUS","0").lower() in {"1","true","yes"}:\n            return ScanResult(True,"signature-only",digest,size,"antivirus_disabled_for_test")\n        engine=shutil.which("clamscan") or shutil.which("clamdscan")
+        if (not self.require_antivirus) and os.getenv("WETU_DISABLE_ANTIVIRUS","0").lower() in {"1","true","yes"}:
+            return ScanResult(True,"signature-only",digest,size,"antivirus_disabled_for_test")
+        engine=shutil.which("clamscan") or shutil.which("clamdscan")
         if not engine:
             if self.require_antivirus: raise RuntimeError("antivirus scanner unavailable; upload blocked")
             return ScanResult(True,"signature-only",digest,size,"antivirus_unavailable")
