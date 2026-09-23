@@ -28,3 +28,10 @@ The identity image is uploaded with a 1h lifecycle. WETU does not expose its loc
 
 ## Honest runtime boundary
 CI uses a fake fal client and consumes no real credits. Without FAL_KEY or FAL_VIDEO_MODEL, WETU does not claim real AI rendering. Real rendering requires an actual fal account, model access and available credits.
+
+
+## Provider output acceptance
+
+When WETU_ACCEPT_PROVIDER_MEDIA is enabled (the production default when the fal gateway is created from environment), provider video is not trusted merely because the provider returned a URL. WETU validates HTTPS and provider host policy, rejects non-public DNS destinations, downloads with bounded size/time, scans the file, probes it with ffprobe, runs a full FFmpeg decode, and applies the media stability gate before accepting the asset.
+
+Configure WETU_PROVIDER_ALLOWED_HOSTS with the exact provider output hostnames used by the deployment. Do not paste arbitrary user-supplied hosts into this setting.
