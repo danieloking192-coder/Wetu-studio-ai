@@ -250,7 +250,7 @@ def test_media_generate_uses_orchestrator_and_exposes_job(tmp_path, monkeypatch)
     thread.start()
     try:
         status, result = request(server, "POST", "/api/media-generate", {
-            "request_id": "orch-1", "kind": "image", "provider": "auto",
+            "request_id": "orch-1", "kind": "image", "provider": "test-image",
             "prompt": "test image"
         })
         assert status == 200
