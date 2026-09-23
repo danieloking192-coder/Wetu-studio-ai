@@ -18,8 +18,10 @@ def test_release_readiness_product_spine():
         root / "docs" / "RUNTIME_PRODUCTION_BOUNDARY.md",
         root / "docs" / "PHOTO_TO_REALISTIC_VIDEO.md",
         root / "docs" / "MULTILINGUAL_PRODUCTION.md",
+        root / "docs" / "IDENTITY_VIDEO_GATEWAY.md",
         root / "src" / "wetu_studio" / "character_identity.py",
         root / "src" / "wetu_studio" / "multilingual_production.py",
+        root / "src" / "wetu_studio" / "identity_video_gateway.py",
     ]
     assert all(path.exists() for path in required)
 

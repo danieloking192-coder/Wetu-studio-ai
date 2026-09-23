@@ -39,6 +39,7 @@ from .media_sync import MediaSyncEngine, SyncCue
 from .security_controls import BoundedRateLimiter, validate_content_length
 from .runtime_control import RuntimeJobStore
 from .character_identity import CharacterIdentityStore, build_image_to_video_request
+from .identity_video_gateway import FalIdentityVideoGateway
 from .multilingual_production import MultilingualProductionRequest, build_language_pipeline, SUPPORTED_OUTPUT_LANGUAGES
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,6 +64,7 @@ AUDIO = AudioRegistry()
 _LOCALIZATION_TRACKS = {}
 IDENTITY_STORE = CharacterIdentityStore(os.environ.get("WETU_IDENTITY_DIR", str(ROOT / ".wetu" / "character_identity")))
 PUBLIC_BASE_URL = os.environ.get("WETU_PUBLIC_BASE_URL", "").rstrip("/")
+FAL_IDENTITY_VIDEO = FalIdentityVideoGateway.from_environment()
 
 def _load_persistent_state():
     state = CreatorState(project_id="demo")
@@ -420,10 +422,28 @@ class Handler(BaseHTTPRequestHandler):
                 if item is None:
                     self._send(404, {"ok": False, "error": "character identity not found"})
                     return
+                provider = body.get("provider", "auto")
                 request = build_image_to_video_request(
-                    item, body["prompt"], body.get("provider", "auto"),
+                    item, body["prompt"], provider,
                     int(body.get("duration", 5)), body.get("resolution", "720p")
                 )
+                # Real fal mode never uses the WETU public identity URL. The server
+                # uploads the private file directly to fal temporary storage.
+                if provider == "fal" or (provider == "auto" and FAL_IDENTITY_VIDEO is not None):
+                    gateway = FAL_IDENTITY_VIDEO
+                    if gateway is None:
+                        self._send(503, {"ok": False, "error": "fal identity video is not configured"})
+                        return
+                    result = gateway.generate(
+                        item, prompt=body["prompt"],
+                        duration=int(body.get("duration", 5)),
+                        resolution=body.get("resolution", "720p"),
+                        options=body.get("options", {}),
+                    )
+                    self._send(200, {"ok": True, "real_media": True, "result": result,
+                                     "request": request,
+                                     "next_step": "Provider video is ready for WETU delivery/transcoding."})
+                    return
                 public_uri = "/media/identity/" + Path(item.path).name
                 public_url = (PUBLIC_BASE_URL + public_uri) if PUBLIC_BASE_URL else public_uri
                 request["references"] = [public_url]
