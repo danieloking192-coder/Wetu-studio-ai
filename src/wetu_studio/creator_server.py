@@ -321,6 +321,9 @@ class Handler(BaseHTTPRequestHandler):
             try: self._send(200, manifest.read_bytes(), "application/manifest+json; charset=utf-8")
             except FileNotFoundError: self._send(404, {"error": "app manifest not found"})
             return
+        if path == "/api/usage":
+            self._send(200, {"ok": True, "usage": USAGE.snapshot()})
+            return
         if path == "/api/state":
             with _STATE_LOCK:
                 snapshot = {"project_id": STATE.project_id,
