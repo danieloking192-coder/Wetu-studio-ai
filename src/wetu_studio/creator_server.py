@@ -26,6 +26,7 @@ from .true_story_realism import TrueStoryRealismEngine, TrueStoryMode
 from .production_realism import ProductionRealismOrchestrator
 from .creative_orchestrator import WetuCreativeOrchestrator
 from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, providers_from_environment
+from .media_orchestrator import MediaOrchestrator
 from .subtitle_engine import SubtitleEngine
 from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
@@ -260,6 +261,7 @@ ENV_MEDIA = providers_from_environment()
 for provider in ENV_MEDIA:
     MEDIA.register(provider)
 CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
+MEDIA_ORCHESTRATOR = MediaOrchestrator(MEDIA)
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
@@ -512,9 +514,25 @@ class Handler(BaseHTTPRequestHandler):
                 result=CREATIVE_ORCHESTRATOR.produce(project_id=body["project_id"], brief=body["brief"], characters=chars, world=world, scenes=scenes, provider=body.get("provider","wetu-local"), kind=body.get("kind","image"), production_memory=body.get("production_memory",{}), default_mood=body.get("default_mood","natural"), true_story=body.get("true_story"), references=body.get("references",[]), options=body.get("options",{}))
                 self._send(200, {"ok":True,"production":_jsonable(result)}); return
             if path == "/api/media-generate":
-                request = MediaRequest(request_id=body["request_id"], project_id=body.get("project_id",STATE.project_id), scene_id=body.get("scene_id"), kind=body["kind"], prompt=body["prompt"], provider=body.get("provider","wetu-local"), references=body.get("references",[]), options=body.get("options",{}))
-                asset = MEDIA.generate(request, body.get("context", {}))
-                self._send(200, {"ok":True,"asset":_jsonable(asset),"real_media":asset.metadata.get("real_media",False)}); return
+                request = MediaRequest(request_id=body["request_id"], project_id=body.get("project_id",STATE.project_id), scene_id=body.get("scene_id"), kind=body["kind"], prompt=body["prompt"], provider=body.get("provider","auto"), references=body.get("references",[]), options=body.get("options",{}))
+                job = MEDIA_ORCHESTRATOR.generate(request, body.get("context", {}), job_id=body.get("job_id"))
+                payload = {"ok": job.status == "completed", "job": _jsonable(job), "status": job.status}
+                if job.asset is not None:
+                    payload["asset"] = _jsonable(job.asset)
+                    payload["real_media"] = bool(job.asset.metadata.get("real_media", False))
+                if job.error:
+                    payload["error"] = job.error
+                self._send(200 if job.status == "completed" else 502, payload); return
+            if path == "/api/media-jobs":
+                job_id = body.get("job_id")
+                if not job_id:
+                    raise ValueError("job_id is required")
+                job = MEDIA_ORCHESTRATOR.get(job_id)
+                if job is None:
+                    self._send(404, {"error": "media job not found"})
+                else:
+                    self._send(200, {"ok": True, "job": _jsonable(job), "status": job.status})
+                return
             if path == "/api/creative-plan":
                 characters=[CharacterDNA(**x) for x in body.get("characters",[])]
                 world=WorldDNA(**body["world"])
