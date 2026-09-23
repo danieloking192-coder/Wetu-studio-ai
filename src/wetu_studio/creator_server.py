@@ -29,6 +29,7 @@ from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, provide
 from .media_orchestrator import MediaOrchestrator
 from .usage_control import UsageLedger
 from .economic_core import EconomicLedger, AccountType
+from .storekit_entitlements import StoreKitEntitlementService, PurchaseValidationError
 from .postproduction import PostProductionEngine, TimelineItem, Caption, AudioMix
 from .product_studio import ProductStudio
 from .subtitle_engine import SubtitleEngine
@@ -268,6 +269,7 @@ CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, med
 MEDIA_ORCHESTRATOR = MediaOrchestrator(MEDIA)
 USAGE = UsageLedger(plan=os.environ.get("WETU_DEFAULT_PLAN", "FREE"))
 ECONOMY = EconomicLedger()
+STOREKIT = StoreKitEntitlementService(ECONOMY)
 POSTPRODUCTION = PostProductionEngine()
 PRODUCT_STUDIO = ProductStudio()
 MATURE_POLICY = MaturePolicy()
@@ -325,6 +327,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/usage":
             self._send(200, {"ok": True, "usage": USAGE.snapshot()})
+            return
+        if path == "/api/store/catalog":
+            self._send(200, {"ok": True, "products": STOREKIT.catalog()})
             return
         if path == "/api/economy":
             self._send(200, {"ok": True, "economy": ECONOMY.snapshot()})
@@ -544,6 +549,18 @@ class Handler(BaseHTTPRequestHandler):
                 scenes=[SceneMemory(**x) for x in body.get("scenes",[])]
                 result=CREATIVE_ORCHESTRATOR.produce(project_id=body["project_id"], brief=body["brief"], characters=chars, world=world, scenes=scenes, provider=body.get("provider","wetu-local"), kind=body.get("kind","image"), production_memory=body.get("production_memory",{}), default_mood=body.get("default_mood","natural"), true_story=body.get("true_story"), references=body.get("references",[]), options=body.get("options",{}))
                 self._send(200, {"ok":True,"production":_jsonable(result)}); return
+            if path == "/api/store/entitlements/grant":
+                try:
+                    ECONOMY.resolve_account("ADMIN", self.headers)
+                except PermissionError:
+                    self._send(403, {"ok": False, "error": "admin authorization required"})
+                    return
+                try:
+                    result = STOREKIT.validate_and_grant(body)
+                    self._send(200, result)
+                except PurchaseValidationError as exc:
+                    self._send(400, {"ok": False, "error": str(exc)})
+                return
             if path == "/api/media-generate":
                 request = MediaRequest(request_id=body["request_id"], project_id=body.get("project_id",STATE.project_id), scene_id=body.get("scene_id"), kind=body["kind"], prompt=body["prompt"], provider=body.get("provider","auto"), references=body.get("references",[]), options=body.get("options",{}))
                 account_type = ECONOMY.resolve_account(body.get("account_type"), self.headers)
