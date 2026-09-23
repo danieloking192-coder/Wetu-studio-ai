@@ -25,7 +25,7 @@ from .emotion_atmosphere import EmotionAtmosphereEngine
 from .true_story_realism import TrueStoryRealismEngine, TrueStoryMode
 from .production_realism import ProductionRealismOrchestrator
 from .creative_orchestrator import WetuCreativeOrchestrator
-from .media_engine import MediaRegistry, MediaRequest, provider_from_environment
+from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, provider_from_environment
 from .subtitle_engine import SubtitleEngine
 from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
@@ -200,6 +200,8 @@ def _activate_project(project_id):
         STATE = _load_persistent_state()
         STATE.project_id = project_id
         CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
+if ENV_MEDIA:
+    CORE.providers[ENV_MEDIA.name] = MediaCoreAdapter(MEDIA, ENV_MEDIA.name)
         _persist_state(STATE)
         _load_runtime(project_id)
         return STATE
