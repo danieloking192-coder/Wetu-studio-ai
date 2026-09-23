@@ -1,0 +1,10 @@
+{
+  "name": "WETU Studio AI",
+  "short_name": "WETU Studio",
+  "description": "AI studio for advertising, films, series and video creation.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "orientation": "portrait-primary"
+}
