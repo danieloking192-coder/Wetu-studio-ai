@@ -62,6 +62,10 @@ class EconomicLedger:
 
     def _roll_month(self) -> None:
         month = self._month()
+        if self.month_key == "":
+            # Preserve an explicitly supplied opening balance in tests/imports.
+            self.month_key = month
+            return
         if self.month_key != month:
             self.month_key = month
             self.promotional_units = 30
