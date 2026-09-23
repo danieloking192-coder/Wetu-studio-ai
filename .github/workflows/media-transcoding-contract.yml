@@ -1,0 +1,48 @@
+name: media-transcoding-contract
+on:
+  workflow_dispatch:
+    inputs:
+      master:
+        description: Path to a test master committed in the repository
+        required: true
+        default: media/test/master.mp4
+  push:
+    paths:
+      - media-transcoding/**
+      - .github/workflows/media-transcoding-contract.yml
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version
+          ffprobe -version
+      - name: Validate Python syntax
+        run: python -m py_compile media-transcoding/transcode_contract.py
+      - name: Validate contract files
+        run: |
+          test -f media-transcoding/TRANSCODING_CONTRACT.md
+          test -f media-transcoding/transcode_contract.py
+      - name: Generate deterministic synthetic test master
+        run: |
+          mkdir -p media/test
+          ffmpeg -y -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000:sample_rate=48000 -t 5 -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 128k media/test/master.mp4
+      - name: Run multi-rendition contract
+        run: |
+          python media-transcoding/transcode_contract.py media/test/master.mp4 --output-dir media/test/renditions --manifest media/test/renditions/manifest.json
+      - name: Check manifest
+        run: |
+          python - <<'PY'
+          import json
+          d = json.load(open("media/test/renditions/manifest.json"))
+          assert len(d["renditions"]) == 3
+          assert all(x["bytes"] > 0 and len(x["sha256"]) == 64 for x in d["renditions"])
+          assert all(x["subtitle_streams"] == 0 for x in d["renditions"])
+          print("TRANSCODING CONTRACT: PASS")
+          PY
