@@ -580,12 +580,16 @@ class Handler(BaseHTTPRequestHandler):
                 request=AnimationRequest(body["request_id"],body.get("project_id",STATE.project_id),body["scene_id"],style,body["prompt"],body.get("references",[]),body.get("options",{}))
                 self._send(200,ANIMATION.build_request(request)); return
             if path == "/api/characters":
+                payload = dict(body)
+                payload.pop("project_id", None)
                 with _STATE_LOCK:
-                    CORE.add_character(CharacterDNA(**body)); _persist_state(STATE)
+                    CORE.add_character(CharacterDNA(**payload)); _persist_state(STATE)
                 self._send(201,{"ok":True}); return
             if path == "/api/worlds":
+                payload = dict(body)
+                payload.pop("project_id", None)
                 with _STATE_LOCK:
-                    CORE.add_world(WorldDNA(**body)); _persist_state(STATE)
+                    CORE.add_world(WorldDNA(**payload)); _persist_state(STATE)
                 self._send(201,{"ok":True}); return
             if path == "/api/scenes":
                 with _STATE_LOCK:
