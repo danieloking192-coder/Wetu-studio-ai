@@ -17,7 +17,7 @@ def test_gateway_uploads_identity_to_fal_and_generates_video(tmp_path):
     item = store.import_image("hero", "portrait.jpg", "image/jpeg",
                               base64.b64encode(b"\xff\xd8\xff\xe0" + b"private-photo").decode(), True)
     fake = FakeFal()
-    result = FalIdentityVideoGateway(model="test/model", api_key="secret", client=fake).generate(
+    result = FalIdentityVideoGateway(model="test/model", api_key="secret", client=fake, accept_output=False).generate(
         item, prompt="The person walks naturally.", duration=5, resolution="720p")
     assert result["real_media"] is True
     assert result["uri"].endswith(".mp4")
