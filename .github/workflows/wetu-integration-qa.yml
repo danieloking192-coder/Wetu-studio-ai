@@ -54,87 +54,66 @@ jobs:
           WETU_STATE_FILE: /tmp/wetu-state/projects/demo.json
         run: |
           mkdir -p /tmp/wetu-state/projects
-          python run_creator.py > /tmp/wetu-creator.log 2>&1 &
-          SERVER_PID=$!
-          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
           python - <<'PY'
           import json
+          import os
+          import subprocess
           import time
           import urllib.request
 
-          base = "http://127.0.0.1:8787"
+          env = os.environ.copy()
+          proc = subprocess.Popen(["python", "run_creator.py"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+          try:
+              base = "http://127.0.0.1:8787"
+              for _ in range(30):
+                  try:
+                      with urllib.request.urlopen(base + "/", timeout=2) as r:
+                          assert r.status == 200
+                          break
+                  except Exception:
+                      time.sleep(1)
+              else:
+                  raise RuntimeError("Creator server did not start")
 
-          def get(path):
-              with urllib.request.urlopen(base + path, timeout=5) as response:
-                  assert response.status in (200, 201, 202), (path, response.status)
-                  return response.read()
+              def get(path):
+                  with urllib.request.urlopen(base + path, timeout=5) as r:
+                      assert r.status == 200, (path, r.status)
+                      return r.read()
 
-          for _ in range(30):
+              def post(path, payload):
+                  raw = json.dumps(payload).encode()
+                  req = urllib.request.Request(base + path, data=raw,
+                      headers={"Content-Type": "application/json"}, method="POST")
+                  with urllib.request.urlopen(req, timeout=5) as r:
+                      assert r.status in (200, 201, 202), (path, r.status)
+                      return json.loads(r.read())
+
+              assert b"WETU Studio" in get("/")
+              assert b'"display": "standalone"' in get("/manifest.webmanifest")
+              assert b'addEventListener("fetch"' in get("/sw.js")
+
+              assert post("/api/projects/create", {"project_id":"smoke","title":"WETU Runtime Smoke"})["ok"]
+              assert post("/api/characters", {"project_id":"smoke","character_id":"amina","name":"Amina","face":{"identity":"persistent"},"wardrobe":{"outfit":"blue dress"},"traits":["calm","determined"]})["ok"]
+              assert post("/api/worlds", {"project_id":"smoke","world_id":"kinshasa","name":"Kinshasa","geography":{"city":"Kinshasa"},"architecture":{"style":"urban"},"landmarks":["city streets"]})["ok"]
+              assert post("/api/scenes", {"project_id":"smoke","scene_id":"scene-01","sequence":1,"character_ids":["amina"],"world_id":"kinshasa","language":"fr","state":{"shot":"wide cinematic"}})["ok"]
+
+              generation = post("/api/generate", {"project_id":"smoke","scene_id":"scene-01","provider":"wetu-demo","kind":"image","prompt":"A cinematic street scene in Kinshasa with Amina.","generation_id":"gen-smoke"})
+              assert generation.get("status") in ("completed","qa_passed"), generation
+              assert generation.get("qa", {}).get("passed") is True, generation
+
+              state = json.loads(get("/api/state"))
+              assert state["project_id"] == "smoke"
+              assert len(state["characters"]) == 1
+              assert len(state["worlds"]) == 1
+              assert len(state["scenes"]) == 1
+              assert len(state["generations"]) == 1
+              print("WETU LIVE CREATOR RUNTIME SMOKE: PASS")
+          finally:
+              proc.terminate()
               try:
-                  get("/")
-                  break
-              except Exception:
-                  time.sleep(1)
-          else:
-              raise RuntimeError("Creator server did not start")
-
-          assert b"WETU Studio" in get("/")
-          assert b'"display": "standalone"' in get("/manifest.webmanifest")
-          assert b'addEventListener("fetch"' in get("/sw.js")
-
-          def post(path, payload):
-              raw = json.dumps(payload).encode()
-              request = urllib.request.Request(
-                  base + path,
-                  data=raw,
-                  headers={"Content-Type": "application/json"},
-                  method="POST",
-              )
-              with urllib.request.urlopen(request, timeout=5) as response:
-                  assert response.status in (200, 201, 202), (path, response.status)
-                  return json.loads(response.read())
-
-          project = post("/api/projects/create", {"project_id": "smoke", "title": "WETU Runtime Smoke"})
-          assert project.get("ok") is True
-
-          character = post("/api/characters", {
-              "project_id": "smoke", "character_id": "amina", "name": "Amina",
-              "face": {"identity": "persistent"}, "wardrobe": {"outfit": "blue dress"},
-              "traits": ["calm", "determined"],
-          })
-          assert character.get("ok") is True
-
-          world = post("/api/worlds", {
-              "project_id": "smoke", "world_id": "kinshasa", "name": "Kinshasa",
-              "geography": {"city": "Kinshasa"}, "architecture": {"style": "urban"},
-              "landmarks": ["city streets"],
-          })
-          assert world.get("ok") is True
-
-          scene = post("/api/scenes", {
-              "project_id": "smoke", "scene_id": "scene-01", "sequence": 1,
-              "character_ids": ["amina"], "world_id": "kinshasa", "language": "fr",
-              "state": {"shot": "wide cinematic"},
-          })
-          assert scene.get("ok") is True
-
-          generation = post("/api/generate", {
-              "project_id": "smoke", "scene_id": "scene-01", "provider": "wetu-demo",
-              "kind": "image", "prompt": "A cinematic street scene in Kinshasa with Amina.",
-              "generation_id": "gen-smoke",
-          })
-          assert generation.get("status") in ("completed", "qa_passed"), generation
-          assert generation.get("qa", {}).get("passed") is True, generation
-
-          state = json.loads(get("/api/state"))
-          assert state["project_id"] == "smoke"
-          assert len(state["characters"]) == 1
-          assert len(state["worlds"]) == 1
-          assert len(state["scenes"]) == 1
-          assert len(state["generations"]) == 1
-
-          print("WETU LIVE CREATOR RUNTIME SMOKE: PASS")
+                  proc.wait(timeout=5)
+              except subprocess.TimeoutExpired:
+                  proc.kill()
           PY
-          cat /tmp/wetu-creator.log
       - name: QA completion marker
         run: echo "WETU Integration QA completed"
