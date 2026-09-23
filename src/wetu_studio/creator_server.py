@@ -27,6 +27,8 @@ from .production_realism import ProductionRealismOrchestrator
 from .creative_orchestrator import WetuCreativeOrchestrator
 from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, providers_from_environment
 from .media_orchestrator import MediaOrchestrator
+from .usage_control import UsageLedger
+from .postproduction import PostProductionEngine, TimelineItem, Caption, AudioMix
 from .subtitle_engine import SubtitleEngine
 from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
@@ -262,6 +264,8 @@ for provider in ENV_MEDIA:
     MEDIA.register(provider)
 CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
 MEDIA_ORCHESTRATOR = MediaOrchestrator(MEDIA)
+USAGE = UsageLedger(plan=os.environ.get("WETU_DEFAULT_PLAN", "FREE"))
+POSTPRODUCTION = PostProductionEngine()
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
@@ -505,6 +509,14 @@ class Handler(BaseHTTPRequestHandler):
                 scene = EMOTION_ATMOSPHERE.build(scene_id=body["scene_id"], mood=body.get("mood","natural"), beats=body.get("emotional_beats",body.get("beats",[])), atmosphere=body.get("atmosphere",{}), sensory_focus=body.get("sensory_focus",[]), camera_guidance=body.get("camera_guidance",[]), continuity_notes=body.get("continuity_notes",[]), source_vs_interpretation=body.get("source_vs_interpretation","artistic_direction"))
                 issues = EMOTION_ATMOSPHERE.validate(scene)
                 self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)}); return
+            if path == "/api/usage":
+                self._send(200, {"ok": True, "usage": USAGE.snapshot()}); return
+            if path == "/api/postproduction/export":
+                items = [TimelineItem(x["item_id"], x["kind"], x["asset_id"], int(x["start_ms"]), int(x["end_ms"]), x.get("track","video"), x.get("language")) for x in body.get("timeline", [])]
+                captions = [Caption(x["caption_id"], int(x["start_ms"]), int(x["end_ms"]), x["text"], x["language"]) for x in body.get("captions", [])]
+                mixes = [AudioMix(x["track_id"], float(x.get("gain_db",0)), float(x.get("pan",0)), bool(x.get("duck_under_dialogue",False))) for x in body.get("audio_mix", [])]
+                manifest = POSTPRODUCTION.export_manifest(project_id=body.get("project_id", STATE.project_id), items=items, captions=captions, audio_mix=mixes, delivery_profiles=body.get("delivery_profiles", ["mobile_saver"]))
+                self._send(200 if manifest["ready"] else 400, {"ok": manifest["ready"], "manifest": manifest}); return
             if path == "/api/providers":
                 self._send(200, {"providers":[_jsonable(x) for x in CREATIVE_ORCHESTRATOR.selector.profiles()]}); return
             if path == "/api/produce":
@@ -515,8 +527,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok":True,"production":_jsonable(result)}); return
             if path == "/api/media-generate":
                 request = MediaRequest(request_id=body["request_id"], project_id=body.get("project_id",STATE.project_id), scene_id=body.get("scene_id"), kind=body["kind"], prompt=body["prompt"], provider=body.get("provider","auto"), references=body.get("references",[]), options=body.get("options",{}))
+                reserved_units = USAGE.reserve(request.kind, request.options)
                 job = MEDIA_ORCHESTRATOR.generate(request, body.get("context", {}), job_id=body.get("job_id"))
-                payload = {"ok": job.status == "completed", "job": _jsonable(job), "status": job.status}
+                if job.status != "completed":
+                    USAGE.refund(reserved_units, request.kind)
+                payload = {"ok": job.status == "completed", "job": _jsonable(job), "status": job.status, "usage": USAGE.snapshot()}
                 if job.asset is not None:
                     payload["asset"] = _jsonable(job.asset)
                     payload["real_media"] = bool(job.asset.metadata.get("real_media", False))
@@ -621,6 +636,8 @@ class Handler(BaseHTTPRequestHandler):
                     result=CORE.generate(**payload); _persist_state(STATE)
                 self._send(200,_jsonable(result)); return
             self._send(404, {"error":"not found"})
+        except PermissionError as exc:
+            self._send(403, {"error": str(exc)})
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
             self._send(400, {"error":str(exc)})
         except Exception as exc:
