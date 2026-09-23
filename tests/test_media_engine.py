@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from wetu_studio.media_engine import MediaRegistry, MediaRequest, HttpMediaProvider, MediaCoreAdapter
 
@@ -62,6 +63,25 @@ class MediaEngineTests(unittest.TestCase):
         self.assertEqual(asset.metadata["estimated_delivery_size_mb"], 7.06)
         self.assertFalse(asset.metadata["provider_result"]["corrupt"])
 
+
+
+    def test_http_provider_rejects_invalid_success_payload(self):
+        provider = HttpMediaProvider("test", "https://example.invalid/generate")
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self): return b'{"model": "x"}'
+        with patch("wetu_studio.media_engine.urlopen", return_value=Response()):
+            with self.assertRaises(ValueError):
+                provider.generate(MediaRequest("r", "p", None, "image", "x", "test"), {})
+
+    def test_http_provider_exposes_provider_http_errors(self):
+        provider = HttpMediaProvider("test", "https://example.invalid/generate")
+        from urllib.error import HTTPError
+        error = HTTPError("https://example.invalid/generate", 503, "unavailable", {}, None)
+        with patch("wetu_studio.media_engine.urlopen", side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 503"):
+                provider.generate(MediaRequest("r", "p", None, "image", "x", "test"), {})
 
     def test_core_adapter_bridges_registry_provider(self):
         registry = MediaRegistry()
