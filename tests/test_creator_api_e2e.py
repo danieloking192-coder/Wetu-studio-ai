@@ -314,3 +314,14 @@ def test_media_generate_uses_orchestrator_and_exposes_job(tmp_path, monkeypatch)
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_storekit_catalog_and_protected_entitlement():
+    from wetu_studio.creator_server import STOREKIT, ECONOMY
+    assert any(p["product_id"] == "wetu_100" for p in STOREKIT.catalog())
+    before = ECONOMY.snapshot()["user"]["purchased_units"]
+    try:
+        STOREKIT.validate_and_grant({"product_id":"wetu_100","transaction_id":"unverified","verified":False})
+    except Exception:
+        pass
+    assert ECONOMY.snapshot()["user"]["purchased_units"] == before
