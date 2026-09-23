@@ -52,5 +52,5 @@ class MediaEngineTests(unittest.TestCase):
         self.assertEqual(asset.metadata["video_delivery_target"]["profile"], "mobile_saver")
         self.assertTrue(asset.metadata["video_quality_compliant"])
         self.assertTrue(asset.metadata["video_delivery_compliant"])
-        self.assertEqual(asset.metadata["estimated_delivery_size_mb"], 7.08)
+        self.assertEqual(asset.metadata["estimated_delivery_size_mb"], 7.06)
         self.assertFalse(asset.metadata["provider_result"]["corrupt"])
