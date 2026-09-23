@@ -602,6 +602,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error":"not found"})
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
             self._send(400, {"error":str(exc)})
+        except Exception as exc:
+            # Keep the HTTP connection alive on unexpected application errors so
+            # integration tests and clients receive a diagnosable response.
+            print(f"WETU Creator POST error on {path}: {exc!r}", flush=True)
+            self._send(500, {"error": "internal server error", "detail": str(exc)})
 
 def serve(host="127.0.0.1", port=8787):
     print(f"WETU Creator: http://{host}:{port}")
