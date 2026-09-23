@@ -21,7 +21,8 @@ class AssetReference:
 
 class ProviderSelector:
     def __init__(self, registry):
-        self.registry=registry
+        self.registry = registry
+
     def profiles(self):
         return [ProviderProfile(
             name=name,
@@ -29,11 +30,14 @@ class ProviderSelector:
             configured=True,
             endpoint_configured=hasattr(p, "endpoint"),
             notes=["provider registered"] if name != "wetu-local" else ["manifest-only; no real media"],
-        ) for name,p in self.registry.providers.items()]
+        ) for name, p in self.registry.providers.items()]
+
     def require(self, name: str, kind: str):
-        p=self.registry.providers.get(name)
-        if p is None: raise ValueError(f"unknown provider: {name}")
-        if kind not in p.capabilities: raise ValueError(f"provider {name} does not support {kind}")
+        p = self.registry.providers.get(name)
+        if p is None:
+            raise ValueError(f"unknown provider: {name}")
+        if kind not in p.capabilities:
+            raise ValueError(f"provider {name} does not support {kind}")
         return p
 
 
@@ -48,6 +52,13 @@ class ProviderGateway:
     """Provider-neutral gateway with capability checks and explicit fallback policy."""
     def __init__(self, registry):
         self.registry = registry
+        self.selector = ProviderSelector(registry)
+
+    def profiles(self):
+        return self.selector.profiles()
+
+    def require(self, name: str, kind: str):
+        return self.selector.require(name, kind)
 
     def available(self, kind: str) -> list[ProviderProfile]:
         return [p for p in self.profiles() if kind in p.capabilities]
