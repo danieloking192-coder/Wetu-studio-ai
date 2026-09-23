@@ -37,6 +37,7 @@ class EconomicReservation:
     kind: str
     units: int
     provider_cost: float
+    credit_source: str = "none"
     status: str = "reserved"
 
 @dataclass
@@ -106,16 +107,19 @@ class EconomicLedger:
             if provider_cost > max_cost:
                 raise PermissionError(f"provider cost guard exceeded: {provider_cost:.2f} > {max_cost:.2f}")
             units = self._units(kind, options)
+            credit_source = "admin"
             if account_type is AccountType.USER:
                 if self.promotional_units >= units:
                     self.promotional_units -= units
+                    credit_source = "promotional"
                 elif self.promotional_units + self.purchased_units >= units:
                     remaining = units - self.promotional_units
                     self.promotional_units = 0
                     self.purchased_units -= remaining
+                    credit_source = "mixed" if remaining < units else "purchased"
                 else:
                     raise PermissionError("insufficient WETU credits")
-            reservation = EconomicReservation(uuid.uuid4().hex, account_type, kind, units, provider_cost)
+            reservation = EconomicReservation(uuid.uuid4().hex, account_type, kind, units, provider_cost, credit_source)
             self._reservations[reservation.reservation_id] = reservation
             self.events.append(self._event(reservation, "reserved"))
             return reservation
@@ -141,7 +145,14 @@ class EconomicLedger:
                 return
             current.status = "refunded"
             if current.account_type is AccountType.USER:
-                self.promotional_units += current.units
+                if current.credit_source == "promotional":
+                    self.promotional_units += current.units
+                elif current.credit_source == "purchased":
+                    self.purchased_units += current.units
+                elif current.credit_source == "mixed":
+                    # Mixed reservations are conservatively returned to purchased balance
+                    # because the promotional portion may have crossed a month boundary.
+                    self.purchased_units += current.units
             self.events.append(self._event(current, "refunded"))
 
     def grant_purchased(self, units: int, source: str = "apple_iap") -> None:
@@ -156,7 +167,7 @@ class EconomicLedger:
     def _event(self, reservation: EconomicReservation, status: str) -> dict[str, Any]:
         return {"at": datetime.now(timezone.utc).isoformat(), "type": "generation",
                 "reservation_id": reservation.reservation_id, "account_type": reservation.account_type.value,
-                "kind": reservation.kind, "units": reservation.units,
+                "kind": reservation.kind, "units": reservation.units, "credit_source": reservation.credit_source,
                 "provider_cost": reservation.provider_cost, "status": status}
 
     def snapshot(self) -> dict[str, Any]:
