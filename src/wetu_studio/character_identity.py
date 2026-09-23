@@ -4,6 +4,7 @@ import base64, hashlib, json, re
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
+from .media_security import MediaSecurityScanner
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -35,6 +36,14 @@ class CharacterIdentityStore:
         if not raw or len(raw) > MAX_IMAGE_BYTES: raise ValueError("image exceeds the 10 MB limit")
         safe = SAFE_NAME.sub("_", Path(filename or "character").name)[:120] or "character"
         digest = hashlib.sha256(raw).hexdigest(); stored = self.images / f"{digest}{ALLOWED_IMAGE_TYPES[mime_type]}"
+        scanner = MediaSecurityScanner(max_bytes=MAX_IMAGE_BYTES)
+        tmp = self.images / f".scan-{digest}.tmp"
+        tmp.write_bytes(raw)
+        try:
+            scan = scanner.scan(tmp, mime_type)
+            if not scan.clean: raise ValueError("malicious media detected")
+        finally:
+            tmp.unlink(missing_ok=True)
         stored.write_bytes(raw)
         record = CharacterIdentity(character_id, safe, mime_type, str(stored), digest, bool(consent_confirmed), bool(real_person))
         records = self._load(); records[character_id] = record.to_dict()

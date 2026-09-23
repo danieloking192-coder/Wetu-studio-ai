@@ -22,6 +22,8 @@ def test_release_readiness_product_spine():
         root / "src" / "wetu_studio" / "character_identity.py",
         root / "src" / "wetu_studio" / "multilingual_production.py",
         root / "src" / "wetu_studio" / "identity_video_gateway.py",
+        root / "src" / "wetu_studio" / "media_security.py",
+        root / "src" / "wetu_studio" / "media_stability.py",
     ]
     assert all(path.exists() for path in required)
 

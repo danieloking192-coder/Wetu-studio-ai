@@ -15,7 +15,7 @@ class FakeFal:
 def test_gateway_uploads_identity_to_fal_and_generates_video(tmp_path):
     store = CharacterIdentityStore(tmp_path / "identity")
     item = store.import_image("hero", "portrait.jpg", "image/jpeg",
-                              base64.b64encode(b"private-photo").decode(), True)
+                              base64.b64encode(b"\xff\xd8\xff\xe0" + b"private-photo").decode(), True)
     fake = FakeFal()
     result = FalIdentityVideoGateway(model="test/model", api_key="secret", client=fake).generate(
         item, prompt="The person walks naturally.", duration=5, resolution="720p")
@@ -28,7 +28,7 @@ def test_gateway_uploads_identity_to_fal_and_generates_video(tmp_path):
 def test_gateway_rejects_without_consent(tmp_path):
     store = CharacterIdentityStore(tmp_path / "identity")
     item = store.import_image("hero", "portrait.jpg", "image/jpeg",
-                              base64.b64encode(b"photo").decode(), False, real_person=False)
+                              base64.b64encode(b"\xff\xd8\xff\xe0" + b"photo").decode(), False, real_person=False)
     gateway = FalIdentityVideoGateway(model="test/model", api_key="secret", client=FakeFal())
     item.consent_confirmed = False
     try:

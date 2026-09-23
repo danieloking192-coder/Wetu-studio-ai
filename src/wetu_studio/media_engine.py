@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from urllib.request import Request, urlopen
 from .video_quality import VideoQualityEngine
 from .video_delivery import VideoDeliveryEngine
+from .media_stability import MediaStabilityEngine
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -147,6 +148,7 @@ class MediaRegistry:
         self.providers = providers or {"wetu-local": LocalMediaProvider()}
         self.video_quality = VideoQualityEngine()
         self.video_delivery = VideoDeliveryEngine()
+        self.media_stability = MediaStabilityEngine()
 
     def register(self, provider: MediaProvider) -> None:
         self.providers[provider.name] = provider
@@ -170,7 +172,13 @@ class MediaRegistry:
             metadata["video_quality_compliant"] = not self.video_quality.validate_output(result, quality_target)
             metadata["video_delivery_target"] = delivery_target
             delivery_output = result.get("delivery_output", result)
-            metadata["video_delivery_compliant"] = not self.video_delivery.validate_delivery_output(delivery_output, delivery_target)
+            delivery_issues = self.video_delivery.validate_delivery_output(delivery_output, delivery_target)
+            metadata["video_delivery_issues"] = delivery_issues
+            metadata["video_delivery_compliant"] = not delivery_issues
+            stability_report = self.media_stability.validate(result, delivery_target)
+            metadata["video_stability_checks"] = stability_report.checks
+            metadata["video_stability_issues"] = list(stability_report.issues)
+            metadata["video_stability_passed"] = stability_report.passed
             if "duration_seconds" in result:
                 metadata["estimated_delivery_size_mb"] = self.video_delivery.estimate_size_mb(
                     float(result["duration_seconds"]), delivery_target
