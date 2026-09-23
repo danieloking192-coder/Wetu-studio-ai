@@ -5,17 +5,21 @@ from pathlib import Path
 from typing import Any
 
 from .character_identity import CharacterIdentity
+from .media_acceptance import MediaAcceptancePipeline, ProviderUrlPolicy
 
 
 class FalIdentityVideoGateway:
     def __init__(self, *, model: str, api_key: str, client: Any | None = None,
-                 timeout: float = 300.0, argument_template: dict[str, Any] | None = None):
+                 timeout: float = 300.0, argument_template: dict[str, Any] | None = None,
+                 acceptance: MediaAcceptancePipeline | None = None, accept_output: bool = False):
         if not model.strip():
             raise ValueError("FAL_VIDEO_MODEL is required")
         if not api_key.strip():
             raise ValueError("FAL_KEY is required")
         self.model, self.api_key, self.timeout = model.strip(), api_key.strip(), timeout
         self.argument_template = argument_template or {}
+        self.acceptance = acceptance
+        self.accept_output = accept_output
         self.client = client or self._load_client(self.api_key)
 
     @staticmethod
@@ -39,8 +43,11 @@ class FalIdentityVideoGateway:
             if not isinstance(parsed, dict):
                 raise ValueError("FAL_VIDEO_ARGUMENTS_JSON must be a JSON object")
             template = parsed
+        allowed = {x.strip() for x in os.getenv("WETU_PROVIDER_ALLOWED_HOSTS", "").split(",") if x.strip()}
+        acceptance = MediaAcceptancePipeline(url_policy=ProviderUrlPolicy(allowed))
+        accept_output = os.getenv("WETU_ACCEPT_PROVIDER_MEDIA", "1").lower() in {"1", "true", "yes"}
         return cls(model=model, api_key=key, timeout=float(os.getenv("FAL_VIDEO_TIMEOUT", "300")),
-                   argument_template=template)
+                   argument_template=template, acceptance=acceptance, accept_output=accept_output)
 
     @staticmethod
     def _replace(value: Any, values: dict[str, str]) -> Any:
@@ -106,8 +113,17 @@ class FalIdentityVideoGateway:
         output_url = self._extract_url(result)
         if not output_url:
             raise ValueError("fal response did not contain a video URL")
+        accepted_path = None
+        acceptance_report = None
+        if self.accept_output:
+            if self.acceptance is None:
+                raise RuntimeError("provider media acceptance pipeline is not configured")
+            accepted_path, acceptance_report = self.acceptance.accept(output_url)
         return {"ok": True, "provider": "fal", "model": self.model, "uri": output_url,
                 "real_media": True, "identity_character_id": identity.character_id,
                 "identity_sha256": identity.sha256, "uploaded_source_url": image_url,
                 "duration_seconds": duration, "resolution": resolution,
-                "source_image_exposure": "fal_temporary_storage_only", "provider_result": result}
+                "source_image_exposure": "fal_temporary_storage_only",
+                "accepted_local_path": str(accepted_path) if accepted_path else None,
+                "acceptance": acceptance_report.__dict__ if acceptance_report else None,
+                "provider_result": result}
