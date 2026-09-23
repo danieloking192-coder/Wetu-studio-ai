@@ -29,6 +29,7 @@ from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, provide
 from .media_orchestrator import MediaOrchestrator
 from .usage_control import UsageLedger
 from .postproduction import PostProductionEngine, TimelineItem, Caption, AudioMix
+from .product_studio import ProductStudio
 from .subtitle_engine import SubtitleEngine
 from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
@@ -266,6 +267,7 @@ CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, med
 MEDIA_ORCHESTRATOR = MediaOrchestrator(MEDIA)
 USAGE = UsageLedger(plan=os.environ.get("WETU_DEFAULT_PLAN", "FREE"))
 POSTPRODUCTION = PostProductionEngine()
+PRODUCT_STUDIO = ProductStudio()
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
@@ -509,6 +511,11 @@ class Handler(BaseHTTPRequestHandler):
                 scene = EMOTION_ATMOSPHERE.build(scene_id=body["scene_id"], mood=body.get("mood","natural"), beats=body.get("emotional_beats",body.get("beats",[])), atmosphere=body.get("atmosphere",{}), sensory_focus=body.get("sensory_focus",[]), camera_guidance=body.get("camera_guidance",[]), continuity_notes=body.get("continuity_notes",[]), source_vs_interpretation=body.get("source_vs_interpretation","artistic_direction"))
                 issues = EMOTION_ATMOSPHERE.validate(scene)
                 self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)}); return
+            if path == "/api/studios":
+                self._send(200, {"ok": True, "studios": PRODUCT_STUDIO.templates()}); return
+            if path == "/api/studio-plan":
+                plan = PRODUCT_STUDIO.plan(body["studio_id"], body.get("title","WETU Production"), body.get("brief",""))
+                self._send(200, {"ok": True, "plan": plan}); return
             if path == "/api/usage":
                 self._send(200, {"ok": True, "usage": USAGE.snapshot()}); return
             if path == "/api/postproduction/export":
