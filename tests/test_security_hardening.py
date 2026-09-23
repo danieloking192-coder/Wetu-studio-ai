@@ -72,7 +72,7 @@ def test_persistence_file_permissions(tmp_path, monkeypatch):
 
 def test_authentication_uses_bearer_token(tmp_path, monkeypatch):
     monkeypatch.setattr(creator_server, "AUTH_TOKEN", "test-secret")
-    monkeypatch.setattr(creator_server, "_RATE_BUCKETS", {})
+    monkeypatch.setattr(creator_server, "_RATE_LIMITER", creator_server.BoundedRateLimiter(window_seconds=60, max_requests=120))
     monkeypatch.setattr(creator_server, "STATE_DIR", tmp_path / "projects")
     monkeypatch.setattr(creator_server, "STATE_FILE", tmp_path / "projects" / "demo.json")
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
