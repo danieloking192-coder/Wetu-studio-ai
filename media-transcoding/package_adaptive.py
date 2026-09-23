@@ -23,8 +23,8 @@ def package(renditions: Path, output: Path):
     (hls/"master.m3u8").write_text("\n".join(lines)+"\n",encoding="utf-8")
     dash=output/"dash"; dash.mkdir(exist_ok=True)
     cmd=["ffmpeg","-y"]+[x for name,*_ in PROFILES for x in ["-i",str(renditions/f"{name}.mp4")]]
-    for i in range(3): cmd += ["-map",f"{i}:v","-map",f"{i}:a"]
-    cmd += ["-c","copy","-adaptation_sets","id=0,streams=0,2,4 id=1,streams=1,3,5","-seg_duration","4","-use_template","1","-use_timeline","1","-f","dash",str(dash/"manifest.mpd")]
+    for i in range(3): cmd += ["-map",f"{i}:v:0","-map",f"{i}:a:0"]
+    cmd += ["-c","copy","-adaptation_sets","id=0,streams=v id=1,streams=a","-seg_duration","4","-use_template","1","-use_timeline","1","-f","dash",str(dash/"manifest.mpd")]
     run(cmd)
     return {"variants":[x[0] for x in variants],"deployment_active":False}
 
