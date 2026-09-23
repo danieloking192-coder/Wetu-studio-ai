@@ -200,8 +200,8 @@ def _activate_project(project_id):
         STATE = _load_persistent_state()
         STATE.project_id = project_id
         CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
-if ENV_MEDIA:
-    CORE.providers[ENV_MEDIA.name] = MediaCoreAdapter(MEDIA, ENV_MEDIA.name)
+        if ENV_MEDIA:
+            CORE.providers[ENV_MEDIA.name] = MediaCoreAdapter(MEDIA, ENV_MEDIA.name)
         _persist_state(STATE)
         _load_runtime(project_id)
         return STATE
