@@ -298,6 +298,13 @@ class Handler(BaseHTTPRequestHandler):
             try: self._send(200, UI.read_bytes(), "text/html; charset=utf-8")
             except FileNotFoundError: self._send(404, {"error": "creator UI not found"})
             return
+        if path == "/sw.js":
+            service_worker = UI.parent / "sw.js"
+            try:
+                self._send(200, service_worker.read_bytes(), "application/javascript; charset=utf-8")
+            except FileNotFoundError:
+                self._send(404, {"error": "service worker not found"})
+            return
         if path == "/manifest.webmanifest":
             manifest = UI.parent / "manifest.webmanifest"
             try: self._send(200, manifest.read_bytes(), "application/manifest+json; charset=utf-8")
