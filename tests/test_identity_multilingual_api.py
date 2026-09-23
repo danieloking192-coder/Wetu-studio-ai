@@ -5,7 +5,7 @@ from wetu_studio.multilingual_production import MultilingualProductionRequest, b
 
 def test_identity_photo_contract(tmp_path):
     store=CharacterIdentityStore(tmp_path/"identity")
-    item=store.import_image("hero-01","portrait.jpg","image/jpeg",base64.b64encode(b"photo").decode(),True)
+    item=store.import_image("hero-01","portrait.jpg","image/jpeg",base64.b64encode(b"\xff\xd8\xff\xe0" + b"photo").decode(),True)
     assert Path(item.path).exists()
     req=build_image_to_video_request(item,"Natural walking motion.")
     assert req["options"]["image_to_video"] is True
