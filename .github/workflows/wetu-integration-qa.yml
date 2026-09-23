@@ -123,7 +123,7 @@ jobs:
               "kind": "image", "prompt": "A cinematic street scene in Kinshasa with Amina.",
               "generation_id": "gen-smoke",
           })
-          assert generation.get("status") == "completed", generation
+          assert generation.get("status") in ("completed", "qa_passed"), generation
           assert generation.get("qa", {}).get("passed") is True, generation
 
           state = json.loads(get("/api/state"))
