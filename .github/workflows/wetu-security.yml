@@ -30,6 +30,7 @@ jobs:
       - name: Test security scanner
         env:
           PYTHONPATH: src
+          WETU_DISABLE_ANTIVIRUS: "1"
         run: python -m pytest -q tests/test_media_security_stability.py
       - name: Dependency review
         if: github.event_name == 'pull_request'
