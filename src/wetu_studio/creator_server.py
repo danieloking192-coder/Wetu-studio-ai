@@ -25,7 +25,7 @@ from .emotion_atmosphere import EmotionAtmosphereEngine
 from .true_story_realism import TrueStoryRealismEngine, TrueStoryMode
 from .production_realism import ProductionRealismOrchestrator
 from .creative_orchestrator import WetuCreativeOrchestrator
-from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, provider_from_environment
+from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, providers_from_environment
 from .subtitle_engine import SubtitleEngine
 from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
@@ -200,8 +200,8 @@ def _activate_project(project_id):
         STATE = _load_persistent_state()
         STATE.project_id = project_id
         CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
-        if ENV_MEDIA:
-            CORE.providers[ENV_MEDIA.name] = MediaCoreAdapter(MEDIA, ENV_MEDIA.name)
+        for provider in ENV_MEDIA:
+            CORE.providers[provider.name] = MediaCoreAdapter(MEDIA, provider.name)
         _persist_state(STATE)
         _load_runtime(project_id)
         return STATE
@@ -256,9 +256,9 @@ EMOTION_ATMOSPHERE = EmotionAtmosphereEngine()
 TRUE_STORY_REALISM = TrueStoryRealismEngine()
 PRODUCTION_REALISM = ProductionRealismOrchestrator(emotion=EMOTION_ATMOSPHERE, true_story=TRUE_STORY_REALISM)
 MEDIA = MediaRegistry()
-ENV_MEDIA = provider_from_environment()
-if ENV_MEDIA:
-    MEDIA.register(ENV_MEDIA)
+ENV_MEDIA = providers_from_environment()
+for provider in ENV_MEDIA:
+    MEDIA.register(provider)
 CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
