@@ -25,7 +25,10 @@ from .emotion_atmosphere import EmotionAtmosphereEngine
 from .true_story_realism import TrueStoryRealismEngine, TrueStoryMode
 from .production_realism import ProductionRealismOrchestrator
 from .creative_orchestrator import WetuCreativeOrchestrator
-from .media_engine import MediaRegistry, MediaRequest, provider_from_environment
+from .media_engine import MediaRegistry, MediaRequest, MediaCoreAdapter, providers_from_environment
+from .media_orchestrator import MediaOrchestrator
+from .usage_control import UsageLedger
+from .postproduction import PostProductionEngine, TimelineItem, Caption, AudioMix
 from .subtitle_engine import SubtitleEngine
 from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
@@ -200,6 +203,8 @@ def _activate_project(project_id):
         STATE = _load_persistent_state()
         STATE.project_id = project_id
         CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
+        for provider in ENV_MEDIA:
+            CORE.providers[provider.name] = MediaCoreAdapter(MEDIA, provider.name)
         _persist_state(STATE)
         _load_runtime(project_id)
         return STATE
@@ -254,10 +259,13 @@ EMOTION_ATMOSPHERE = EmotionAtmosphereEngine()
 TRUE_STORY_REALISM = TrueStoryRealismEngine()
 PRODUCTION_REALISM = ProductionRealismOrchestrator(emotion=EMOTION_ATMOSPHERE, true_story=TRUE_STORY_REALISM)
 MEDIA = MediaRegistry()
-ENV_MEDIA = provider_from_environment()
-if ENV_MEDIA:
-    MEDIA.register(ENV_MEDIA)
+ENV_MEDIA = providers_from_environment()
+for provider in ENV_MEDIA:
+    MEDIA.register(provider)
 CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
+MEDIA_ORCHESTRATOR = MediaOrchestrator(MEDIA)
+USAGE = UsageLedger(plan=os.environ.get("WETU_DEFAULT_PLAN", "FREE"))
+POSTPRODUCTION = PostProductionEngine()
 MATURE_POLICY = MaturePolicy()
 CORE = CreatorApplicationCore(STATE, providers={"wetu-demo": DemoProvider()}, qa=PassQA(), continuity=DemoContinuity())
 
@@ -276,6 +284,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Connection", "close")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -500,21 +509,46 @@ class Handler(BaseHTTPRequestHandler):
                 scene = EMOTION_ATMOSPHERE.build(scene_id=body["scene_id"], mood=body.get("mood","natural"), beats=body.get("emotional_beats",body.get("beats",[])), atmosphere=body.get("atmosphere",{}), sensory_focus=body.get("sensory_focus",[]), camera_guidance=body.get("camera_guidance",[]), continuity_notes=body.get("continuity_notes",[]), source_vs_interpretation=body.get("source_vs_interpretation","artistic_direction"))
                 issues = EMOTION_ATMOSPHERE.validate(scene)
                 self._send(200, {"ok": not issues, "issues": issues, "scene": EMOTION_ATMOSPHERE.to_dict(scene), "continuity_snapshot": EMOTION_ATMOSPHERE.continuity_snapshot(scene)}); return
+            if path == "/api/usage":
+                self._send(200, {"ok": True, "usage": USAGE.snapshot()}); return
+            if path == "/api/postproduction/export":
+                items = [TimelineItem(x["item_id"], x["kind"], x["asset_id"], int(x["start_ms"]), int(x["end_ms"]), x.get("track","video"), x.get("language")) for x in body.get("timeline", [])]
+                captions = [Caption(x["caption_id"], int(x["start_ms"]), int(x["end_ms"]), x["text"], x["language"]) for x in body.get("captions", [])]
+                mixes = [AudioMix(x["track_id"], float(x.get("gain_db",0)), float(x.get("pan",0)), bool(x.get("duck_under_dialogue",False))) for x in body.get("audio_mix", [])]
+                manifest = POSTPRODUCTION.export_manifest(project_id=body.get("project_id", STATE.project_id), items=items, captions=captions, audio_mix=mixes, delivery_profiles=body.get("delivery_profiles", ["mobile_saver"]))
+                self._send(200 if manifest["ready"] else 400, {"ok": manifest["ready"], "manifest": manifest}); return
             if path == "/api/providers":
                 self._send(200, {"providers":[_jsonable(x) for x in CREATIVE_ORCHESTRATOR.selector.profiles()]}); return
             if path == "/api/produce":
-                from .models.production import CharacterDNA, SceneMemory, WorldDNA
                 chars=[CharacterDNA(**x) for x in body.get("characters",[])]
                 world=WorldDNA(**body["world"])
                 scenes=[SceneMemory(**x) for x in body.get("scenes",[])]
                 result=CREATIVE_ORCHESTRATOR.produce(project_id=body["project_id"], brief=body["brief"], characters=chars, world=world, scenes=scenes, provider=body.get("provider","wetu-local"), kind=body.get("kind","image"), production_memory=body.get("production_memory",{}), default_mood=body.get("default_mood","natural"), true_story=body.get("true_story"), references=body.get("references",[]), options=body.get("options",{}))
                 self._send(200, {"ok":True,"production":_jsonable(result)}); return
             if path == "/api/media-generate":
-                request = MediaRequest(request_id=body["request_id"], project_id=body.get("project_id",STATE.project_id), scene_id=body.get("scene_id"), kind=body["kind"], prompt=body["prompt"], provider=body.get("provider","wetu-local"), references=body.get("references",[]), options=body.get("options",{}))
-                asset = MEDIA.generate(request, body.get("context", {}))
-                self._send(200, {"ok":True,"asset":_jsonable(asset),"real_media":asset.metadata.get("real_media",False)}); return
+                request = MediaRequest(request_id=body["request_id"], project_id=body.get("project_id",STATE.project_id), scene_id=body.get("scene_id"), kind=body["kind"], prompt=body["prompt"], provider=body.get("provider","auto"), references=body.get("references",[]), options=body.get("options",{}))
+                reserved_units = USAGE.reserve(request.kind, request.options)
+                job = MEDIA_ORCHESTRATOR.generate(request, body.get("context", {}), job_id=body.get("job_id"))
+                if job.status != "completed":
+                    USAGE.refund(reserved_units, request.kind)
+                payload = {"ok": job.status == "completed", "job": _jsonable(job), "status": job.status, "usage": USAGE.snapshot()}
+                if job.asset is not None:
+                    payload["asset"] = _jsonable(job.asset)
+                    payload["real_media"] = bool(job.asset.metadata.get("real_media", False))
+                if job.error:
+                    payload["error"] = job.error
+                self._send(200 if job.status == "completed" else 502, payload); return
+            if path == "/api/media-jobs":
+                job_id = body.get("job_id")
+                if not job_id:
+                    raise ValueError("job_id is required")
+                job = MEDIA_ORCHESTRATOR.get(job_id)
+                if job is None:
+                    self._send(404, {"error": "media job not found"})
+                else:
+                    self._send(200, {"ok": True, "job": _jsonable(job), "status": job.status})
+                return
             if path == "/api/creative-plan":
-                from .models.production import CharacterDNA, SceneMemory, WorldDNA
                 characters=[CharacterDNA(**x) for x in body.get("characters",[])]
                 world=WorldDNA(**body["world"])
                 scenes=[SceneMemory(**x) for x in body.get("scenes",[])]
@@ -596,12 +630,21 @@ class Handler(BaseHTTPRequestHandler):
                     CORE.add_scene(SceneMemory(**body)); _persist_state(STATE)
                 self._send(201,{"ok":True}); return
             if path == "/api/generate":
+                payload = dict(body)
+                payload.pop("project_id", None)
                 with _STATE_LOCK:
-                    result=CORE.generate(**body); _persist_state(STATE)
+                    result=CORE.generate(**payload); _persist_state(STATE)
                 self._send(200,_jsonable(result)); return
             self._send(404, {"error":"not found"})
+        except PermissionError as exc:
+            self._send(403, {"error": str(exc)})
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
             self._send(400, {"error":str(exc)})
+        except Exception as exc:
+            # Keep the HTTP connection alive on unexpected application errors so
+            # integration tests and clients receive a diagnosable response.
+            print(f"WETU Creator POST error on {path}: {exc!r}", flush=True)
+            self._send(500, {"error": "internal server error", "detail": str(exc)})
 
 def serve(host="127.0.0.1", port=8787):
     print(f"WETU Creator: http://{host}:{port}")

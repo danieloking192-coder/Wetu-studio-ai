@@ -231,3 +231,38 @@ def test_subtitle_generation_api_requires_toggle_and_persists_track(tmp_path, mo
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_media_generate_uses_orchestrator_and_exposes_job(tmp_path, monkeypatch):
+    from wetu_studio import creator_server
+    from wetu_studio.media_engine import MediaRegistry
+    from wetu_studio.media_orchestrator import MediaOrchestrator
+    monkeypatch.setattr(creator_server, "MEDIA", MediaRegistry())
+    monkeypatch.setattr(creator_server, "MEDIA_ORCHESTRATOR", MediaOrchestrator(creator_server.MEDIA))
+    class Provider:
+        name = "test-image"
+        capabilities = {"image"}
+        def generate(self, request, context):
+            return {"model": "test", "uri": "memory://test/image", "kind": "image", "real_media": False}
+    creator_server.MEDIA.register(Provider())
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, result = request(server, "POST", "/api/media-generate", {
+            "request_id": "orch-1", "kind": "image", "provider": "test-image",
+            "prompt": "test image"
+        })
+        assert status == 200
+        assert result["ok"] is True
+        assert result["status"] == "completed"
+        assert result["job"]["provider"] == "test-image"
+        assert result["asset"]["status"] == "ready"
+
+        status, job = request(server, "POST", "/api/media-jobs", {"job_id": "orch-1"})
+        assert status == 200
+        assert job["job"]["status"] == "completed"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

@@ -84,9 +84,13 @@ jobs:
                   raw = json.dumps(payload).encode()
                   req = urllib.request.Request(base + path, data=raw,
                       headers={"Content-Type": "application/json"}, method="POST")
-                  with urllib.request.urlopen(req, timeout=5) as r:
-                      assert r.status in (200, 201, 202), (path, r.status)
-                      return json.loads(r.read())
+                  try:
+                      with urllib.request.urlopen(req, timeout=5) as r:
+                          assert r.status in (200, 201, 202), (path, r.status)
+                          return json.loads(r.read())
+                  except urllib.error.HTTPError as exc:
+                      detail = exc.read().decode("utf-8", errors="replace")
+                      raise RuntimeError(f"{path} returned HTTP {exc.code}: {detail}") from exc
 
               assert b"WETU Studio" in get("/")
               assert b'"display": "standalone"' in get("/manifest.webmanifest")
@@ -101,6 +105,13 @@ jobs:
               assert generation.get("status") in ("completed","qa_passed"), generation
               assert generation.get("qa", {}).get("passed") is True, generation
 
+              usage = json.loads(get("/api/usage"))
+              assert usage["usage"]["plan"] == "FREE"
+              media = post("/api/media-generate", {"request_id":"media-smoke","project_id":"smoke","kind":"image","prompt":"smoke"})
+              assert media["ok"] is True, media
+              assert media["usage"]["month_units_used"] == 1, media
+              export = post("/api/postproduction/export", {"project_id":"smoke","timeline":[{"item_id":"t1","kind":"video","asset_id":"media-smoke","start_ms":0,"end_ms":1000}],"delivery_profiles":["mobile_saver"]})
+              assert export["ok"] is True, export
               state = json.loads(get("/api/state"))
               assert state["project_id"] == "smoke"
               assert len(state["characters"]) == 1
