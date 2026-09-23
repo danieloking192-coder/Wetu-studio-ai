@@ -90,8 +90,26 @@ def provider_from_environment(prefix: str = "WETU_MEDIA") -> HttpMediaProvider |
     endpoint = os.getenv(f"{prefix}_ENDPOINT", "").strip()
     if not endpoint:
         return None
-    return HttpMediaProvider(os.getenv(f"{prefix}_NAME", "wetu-http"), endpoint,
-                             os.getenv(f"{prefix}_API_KEY", ""), float(os.getenv(f"{prefix}_TIMEOUT", "60")))
+    provider = HttpMediaProvider(
+        os.getenv(f"{prefix}_NAME", "wetu-http"),
+        endpoint,
+        os.getenv(f"{prefix}_API_KEY", ""),
+        float(os.getenv(f"{prefix}_TIMEOUT", "60")),
+    )
+    capabilities = os.getenv(f"{prefix}_CAPABILITIES", "").strip()
+    if capabilities:
+        provider.capabilities = {item.strip() for item in capabilities.split(",") if item.strip()}
+    return provider
+
+def providers_from_environment() -> list[HttpMediaProvider]:
+    providers = []
+    for prefix in ("WETU_MEDIA", "WETU_IMAGE", "WETU_VIDEO", "WETU_AUDIO"):
+        provider = provider_from_environment(prefix)
+        if provider is not None:
+            if prefix != "WETU_MEDIA":
+                provider.capabilities = {prefix.removeprefix("WETU_").lower()}
+            providers.append(provider)
+    return providers
 
 class MediaCoreAdapter:
     """Bridge the Creator Core provider contract to the real media registry."""
