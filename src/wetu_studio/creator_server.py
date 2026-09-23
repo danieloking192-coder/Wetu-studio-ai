@@ -38,13 +38,15 @@ from .audio_pipeline import AudioRegistry, VoiceRequest
 from .media_sync import MediaSyncEngine, SyncCue
 from .security_controls import BoundedRateLimiter, validate_content_length
 from .runtime_control import RuntimeJobStore
+from .character_identity import CharacterIdentityStore, build_image_to_video_request
+from .multilingual_production import MultilingualProductionRequest, build_language_pipeline, SUPPORTED_OUTPUT_LANGUAGES
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
 STATE_DIR = Path(os.environ.get("WETU_STATE_DIR", str(ROOT / ".wetu" / "projects")))
 PROJECT_INDEX = Path(os.environ.get("WETU_PROJECT_INDEX", str(ROOT / ".wetu" / "projects.json")))
 STATE_FILE = Path(os.environ.get("WETU_STATE_FILE", str(STATE_DIR / "demo.json")))
-MAX_BODY_BYTES = int(os.environ.get("WETU_MAX_BODY_BYTES", "2097152"))
+MAX_BODY_BYTES = int(os.environ.get("WETU_MAX_BODY_BYTES", "12582912"))
 RATE_LIMIT_WINDOW = int(os.environ.get("WETU_RATE_LIMIT_WINDOW", "60"))
 RATE_LIMIT_MAX = int(os.environ.get("WETU_RATE_LIMIT_MAX", "120"))
 _STATE_LOCK = threading.RLock()
@@ -59,6 +61,8 @@ _RATE_LIMITER = BoundedRateLimiter(window_seconds=RATE_LIMIT_WINDOW, max_request
 LOCALIZATION = LocalizationEngine()
 AUDIO = AudioRegistry()
 _LOCALIZATION_TRACKS = {}
+IDENTITY_STORE = CharacterIdentityStore(os.environ.get("WETU_IDENTITY_DIR", str(ROOT / ".wetu" / "character_identity")))
+PUBLIC_BASE_URL = os.environ.get("WETU_PUBLIC_BASE_URL", "").rstrip("/")
 
 def _load_persistent_state():
     state = CreatorState(project_id="demo")
@@ -322,6 +326,16 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self._send(404, {"error": "service worker not found"})
             return
+        if path.startswith("/media/identity/"):
+            rel = path[len("/media/identity/"):].lstrip("/")
+            candidate = (IDENTITY_STORE.images / Path(rel).name).resolve()
+            if candidate.parent != IDENTITY_STORE.images.resolve() or not candidate.exists():
+                self._send(404, {"error": "identity media not found"})
+                return
+            suffix = candidate.suffix.lower()
+            mime = {".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp"}.get(suffix, "application/octet-stream")
+            self._send(200, candidate.read_bytes(), mime)
+            return
         if path == "/manifest.webmanifest":
             manifest = UI.parent / "manifest.webmanifest"
             try: self._send(200, manifest.read_bytes(), "application/manifest+json; charset=utf-8")
@@ -390,6 +404,46 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "JSON object required"})
                 return
             _validate_common(body)
+            if path == "/api/character/import":
+                item = IDENTITY_STORE.import_image(
+                    character_id=body["character_id"], filename=body.get("filename", "character"),
+                    mime_type=body["mime_type"], data_base64=body["data_base64"],
+                    consent_confirmed=bool(body.get("consent_confirmed", False)),
+                    real_person=bool(body.get("real_person", True)),
+                )
+                public_uri = "/media/identity/" + Path(item.path).name
+                public_url = (PUBLIC_BASE_URL + public_uri) if PUBLIC_BASE_URL else public_uri
+                self._send(201, {"ok": True, "character": item.to_dict(), "media_url": public_url})
+                return
+            if path == "/api/character/image-to-video":
+                item = IDENTITY_STORE.get(body["character_id"])
+                if item is None:
+                    self._send(404, {"ok": False, "error": "character identity not found"})
+                    return
+                request = build_image_to_video_request(
+                    item, body["prompt"], body.get("provider", "auto"),
+                    int(body.get("duration", 5)), body.get("resolution", "720p")
+                )
+                public_uri = "/media/identity/" + Path(item.path).name
+                public_url = (PUBLIC_BASE_URL + public_uri) if PUBLIC_BASE_URL else public_uri
+                request["references"] = [public_url]
+                request["options"]["image_url"] = public_url
+                request["options"]["identity_video"] = True
+                request["options"]["realistic_video"] = True
+                self._send(200, {"ok": True, "request": request,
+                                 "next_step": "Configure a real image-to-video provider to render the video."})
+                return
+            if path == "/api/multilingual/plan":
+                req = MultilingualProductionRequest(
+                    project_id=body.get("project_id", STATE.project_id), scene_id=body.get("scene_id"),
+                    source_language=body.get("source_language", "fr"), target_language=body["target_language"],
+                    script=body["script"], preserve_meaning=bool(body.get("preserve_meaning", True)),
+                    preserve_tone=bool(body.get("preserve_tone", True)), lip_sync=bool(body.get("lip_sync", True)),
+                )
+                plan = build_language_pipeline(req)
+                self._send(200 if plan["ok"] else 400, {"ok": plan["ok"], "plan": plan,
+                                                         "languages": SUPPORTED_OUTPUT_LANGUAGES})
+                return
             if path == "/api/projects":
                 self._send(200, {"ok": True, "active_project_id": STATE.project_id, "projects": _list_projects()})
                 return
