@@ -37,6 +37,7 @@ from .localization_engine import LocalizationEngine, LocalizationTrack
 from .audio_pipeline import AudioRegistry, VoiceRequest
 from .media_sync import MediaSyncEngine, SyncCue
 from .security_controls import BoundedRateLimiter, validate_content_length
+from .runtime_control import RuntimeJobStore
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -266,7 +267,8 @@ ENV_MEDIA = providers_from_environment()
 for provider in ENV_MEDIA:
     MEDIA.register(provider)
 CREATIVE_ORCHESTRATOR = WetuCreativeOrchestrator(realism=PRODUCTION_REALISM, media=MEDIA)
-MEDIA_ORCHESTRATOR = MediaOrchestrator(MEDIA)
+MEDIA_ORCHESTRATOR = MediaOrchestrator(MEDIA, job_store=RuntimeJobStore(os.environ.get("WETU_JOB_STORE")))
+RUNTIME_JOBS = MEDIA_ORCHESTRATOR.job_store
 USAGE = UsageLedger(plan=os.environ.get("WETU_DEFAULT_PLAN", "FREE"))
 ECONOMY = EconomicLedger()
 STOREKIT = StoreKitEntitlementService(ECONOMY)
@@ -330,6 +332,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/store/catalog":
             self._send(200, {"ok": True, "products": STOREKIT.catalog()})
+            return
+        if path == "/api/runtime/health":
+            self._send(200, {"ok": True, "jobs": RUNTIME_JOBS.snapshot(), "providers": MEDIA_ORCHESTRATOR.provider_health.snapshot(), "metrics": MEDIA_ORCHESTRATOR.metrics.snapshot()})
             return
         if path == "/api/economy":
             self._send(200, {"ok": True, "economy": ECONOMY.snapshot()})
