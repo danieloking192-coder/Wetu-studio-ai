@@ -252,11 +252,14 @@ def test_economic_roles_and_admin_guard(tmp_path, monkeypatch):
         except Exception as exc:
             assert "403" in str(exc)
 
-        status, result = request(server, "POST", "/api/media-generate", {
-            "request_id": "admin-media-1", "kind": "image", "provider": "wetu-local",
-            "prompt": "admin test", "account_type": "ADMIN"
-        })
-        assert status == 403
+        try:
+            request(server, "POST", "/api/media-generate", {
+                "request_id": "admin-media-1", "kind": "image", "provider": "wetu-local",
+                "prompt": "admin test", "account_type": "ADMIN"
+            })
+            assert False
+        except Exception as exc:
+            assert "403" in str(exc)
 
         # The client may only use ADMIN when it also presents the server-side key.
         url = f"http://127.0.0.1:{server.server_port}/api/media-generate"
