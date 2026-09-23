@@ -340,7 +340,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": True, "economy": ECONOMY.snapshot()})
             return
         if path == "/api/admin/economy":
-            ECONOMY.resolve_account("ADMIN", self.headers)
+            try:
+                ECONOMY.resolve_account("ADMIN", self.headers)
+            except PermissionError:
+                self._send(403, {"ok": False, "error": "admin authorization required"})
+                return
             self._send(200, {"ok": True, "economy": ECONOMY.admin_snapshot()})
             return
         if path == "/api/state":
