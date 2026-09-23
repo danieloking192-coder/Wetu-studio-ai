@@ -326,6 +326,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/usage":
             self._send(200, {"ok": True, "usage": USAGE.snapshot()})
             return
+        if path == "/api/economy":
+            self._send(200, {"ok": True, "economy": ECONOMY.snapshot()})
+            return
+        if path == "/api/admin/economy":
+            ECONOMY.resolve_account("ADMIN", self.headers)
+            self._send(200, {"ok": True, "economy": ECONOMY.admin_snapshot()})
+            return
         if path == "/api/state":
             with _STATE_LOCK:
                 snapshot = {"project_id": STATE.project_id,
