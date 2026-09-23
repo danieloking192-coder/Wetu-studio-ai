@@ -1,6 +1,10 @@
 """Bandwidth-aware video delivery contracts for WETU Studio AI."""
 from __future__ import annotations
+
 from dataclasses import dataclass
+
+from .adaptive_streaming import AdaptiveStreamingEngine
+
 
 @dataclass(frozen=True)
 class DeliveryProfile:
@@ -11,6 +15,7 @@ class DeliveryProfile:
     video_bitrate_kbps: int
     audio_bitrate_kbps: int
 
+
 PROFILES = {
     "mobile_saver": DeliveryProfile("mobile_saver", 854, 480, 24, 900, 64),
     "mobile": DeliveryProfile("mobile", 1280, 720, 30, 1800, 96),
@@ -18,8 +23,12 @@ PROFILES = {
     "high_quality": DeliveryProfile("high_quality", 1920, 1080, 30, 6000, 160),
 }
 
+
 class VideoDeliveryEngine:
     """Builds bandwidth-aware targets and estimates viewing size."""
+
+    def __init__(self, adaptive_streaming: AdaptiveStreamingEngine | None = None):
+        self.adaptive_streaming = adaptive_streaming or AdaptiveStreamingEngine()
 
     def profile(self, name: str = "mobile") -> DeliveryProfile:
         try:
@@ -29,11 +38,25 @@ class VideoDeliveryEngine:
 
     def target(self, options: dict | None = None) -> dict[str, object]:
         options = options or {}
-        profile = self.profile(str(options.get("delivery_profile", "mobile")))
-        return {"profile": profile.name, "width": profile.width, "height": profile.height,
-                "fps": profile.fps, "video_bitrate_kbps": profile.video_bitrate_kbps,
-                "audio_bitrate_kbps": profile.audio_bitrate_kbps,
-                "adaptive_delivery": True, "master_kept_separately": True}
+        network = str(options.get("network", "normal")).lower()
+        preferred = options.get("delivery_profile")
+        adaptive = bool(options.get("adaptive", True))
+        if adaptive and not preferred:
+            selected = self.adaptive_streaming.select(network=network)["profile"]
+        else:
+            selected = str(preferred or "mobile")
+        profile = self.profile(selected)
+        return {
+            "profile": profile.name,
+            "width": profile.width,
+            "height": profile.height,
+            "fps": profile.fps,
+            "video_bitrate_kbps": profile.video_bitrate_kbps,
+            "audio_bitrate_kbps": profile.audio_bitrate_kbps,
+            "adaptive_delivery": adaptive,
+            "network": network,
+            "master_kept_separately": True,
+        }
 
     def estimate_size_mb(self, duration_seconds: float, target: dict) -> float:
         if duration_seconds < 0:
