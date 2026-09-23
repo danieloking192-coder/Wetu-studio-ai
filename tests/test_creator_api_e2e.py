@@ -233,6 +233,51 @@ def test_subtitle_generation_api_requires_toggle_and_persists_track(tmp_path, mo
         thread.join(timeout=2)
 
 
+def test_economic_roles_and_admin_guard(tmp_path, monkeypatch):
+    from wetu_studio import creator_server
+    from wetu_studio.economic_core import EconomicLedger
+    monkeypatch.setattr(creator_server, "ECONOMY", EconomicLedger(promotional_units=5, purchased_units=10))
+    monkeypatch.setenv("WETU_ADMIN_KEY", "test-admin-key")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, public = request(server, "GET", "/api/economy")
+        assert status == 200
+        assert public["economy"]["user"]["promotional_units"] == 5
+
+        try:
+            request(server, "GET", "/api/admin/economy")
+            assert False
+        except Exception as exc:
+            assert "403" in str(exc)
+
+        status, result = request(server, "POST", "/api/media-generate", {
+            "request_id": "admin-media-1", "kind": "image", "provider": "wetu-local",
+            "prompt": "admin test", "account_type": "ADMIN"
+        })
+        assert status == 403
+
+        # The client may only use ADMIN when it also presents the server-side key.
+        url = f"http://127.0.0.1:{server.server_port}/api/media-generate"
+        payload = json.dumps({
+            "request_id": "admin-media-2", "kind": "image", "provider": "wetu-local",
+            "prompt": "admin test", "account_type": "ADMIN"
+        }).encode()
+        req = urllib.request.Request(url, data=payload, headers={
+            "Content-Type": "application/json", "X-WETU-ADMIN-KEY": "test-admin-key"
+        }, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            result = json.loads(response.read().decode())
+            assert response.status == 200
+        assert result["economy"]["user"]["promotional_units"] == 5
+        assert result["economy"]["admin"]["provider_cost_logged"] == 0.0
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_media_generate_uses_orchestrator_and_exposes_job(tmp_path, monkeypatch):
     from wetu_studio import creator_server
     from wetu_studio.media_engine import MediaRegistry
