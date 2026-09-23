@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from wetu_studio.media_engine import MediaRegistry, MediaRequest, HttpMediaProvider, MediaCoreAdapter
+from wetu_studio.media_engine import MediaRegistry, MediaRequest, HttpMediaProvider, MediaCoreAdapter, providers_from_environment
 
 
 class DeterministicVideoProvider:
@@ -82,6 +82,19 @@ class MediaEngineTests(unittest.TestCase):
         with patch("wetu_studio.media_engine.urlopen", side_effect=error):
             with self.assertRaisesRegex(RuntimeError, "HTTP 503"):
                 provider.generate(MediaRequest("r", "p", None, "image", "x", "test"), {})
+
+
+    def test_per_media_provider_environment_configuration(self):
+        with patch.dict("os.environ", {
+            "WETU_IMAGE_ENDPOINT": "https://image.example/generate",
+            "WETU_IMAGE_NAME": "image-provider",
+            "WETU_IMAGE_API_KEY": "secret",
+        }, clear=False):
+            providers = providers_from_environment()
+        image = next(p for p in providers if p.name == "image-provider")
+        self.assertEqual(image.capabilities, {"image"})
+        self.assertEqual(image.endpoint, "https://image.example/generate")
+        self.assertEqual(image.api_key, "secret")
 
     def test_core_adapter_bridges_registry_provider(self):
         registry = MediaRegistry()
