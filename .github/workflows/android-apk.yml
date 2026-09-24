@@ -78,6 +78,8 @@ jobs:
             adb shell am force-stop ai.wetu.studio.debug
             adb shell am start -n ai.wetu.studio.debug/ai.wetu.studio.MainActivity
             sleep 5
-            adb shell dumpsys activity activities | grep -q "ai.wetu.studio/.MainActivity"
+            adb shell dumpsys activity activities | grep -q "ai.wetu.studio.debug/ai.wetu.studio.MainActivity"
             adb shell pm path ai.wetu.studio.debug
+            adb shell uiautomator dump /sdcard/wetu-ui.xml >/dev/null
+            adb shell cat /sdcard/wetu-ui.xml | grep -q "Donne vie à ton histoire."
             adb shell settings get system screen_brightness
