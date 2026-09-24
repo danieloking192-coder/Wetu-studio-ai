@@ -77,13 +77,63 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim
           disable-animations: true
           script: |
-            set -eux
+            set -uo pipefail
             APK="$GITHUB_WORKSPACE/android/app/build/outputs/apk/debug/app-debug.apk"
-            test -s "$APK"
-            adb install -r "$APK"
-            adb shell pm path ai.wetu.studio.debug
-            adb shell am force-stop ai.wetu.studio.debug
-            adb shell monkey -p ai.wetu.studio.debug -c android.intent.category.LAUNCHER 1
+            echo "=== WETU ANDROID DIAGNOSTIC ==="
+            echo "APK=$APK"
+            if [ ! -s "$APK" ]; then
+              echo "::error::APK missing or empty"
+              exit 1
+            fi
+
+            echo "=== DEVICE ==="
+            adb devices
+            adb shell getprop ro.build.version.sdk || true
+
+            echo "=== INSTALL ==="
+            if ! adb install -r "$APK"; then
+              echo "::group::ADB install diagnostics"
+              adb shell pm list packages | grep -E "ai\.wetu\.studio" || true
+              adb logcat -d -t 200 || true
+              echo "::endgroup::"
+              exit 1
+            fi
+
+            echo "=== PACKAGE ==="
+            adb shell pm path ai.wetu.studio.debug || {
+              echo "::error::WETU debug package not installed"
+              adb logcat -d -t 300 || true
+              exit 1
+            }
+
+            echo "=== LAUNCH ==="
+            adb shell am force-stop ai.wetu.studio.debug || true
+            if ! adb shell monkey -p ai.wetu.studio.debug -c android.intent.category.LAUNCHER 1; then
+              echo "::group::Launch diagnostics"
+              adb shell dumpsys package ai.wetu.studio.debug || true
+              adb logcat -d -t 400 || true
+              echo "::endgroup::"
+              exit 1
+            fi
+
             sleep 5
-            adb shell pidof ai.wetu.studio.debug
-            adb shell dumpsys package ai.wetu.studio.debug | grep -q "ai.wetu.studio.MainActivity"
+
+            echo "=== PROCESS ==="
+            if ! adb shell pidof ai.wetu.studio.debug; then
+              echo "::error::WETU process is not running after launch"
+              echo "::group::Runtime diagnostics"
+              adb shell dumpsys activity activities | tail -n 200 || true
+              adb logcat -d -t 500 || true
+              echo "::endgroup::"
+              exit 1
+            fi
+
+            echo "=== ACTIVITY REGISTRATION ==="
+            if ! adb shell dumpsys package ai.wetu.studio.debug | grep -q "ai.wetu.studio.MainActivity"; then
+              echo "::error::MainActivity not registered"
+              adb shell dumpsys package ai.wetu.studio.debug || true
+              adb logcat -d -t 500 || true
+              exit 1
+            fi
+
+            echo "=== WETU SMOKE TEST PASSED ==="
