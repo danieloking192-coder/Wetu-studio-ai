@@ -59,7 +59,7 @@ jobs:
           grep -q "480p" app/src/main/assets/creator_studio.html
           grep -q "720p" app/src/main/assets/creator_studio.html
           grep -q "1080p" app/src/main/assets/creator_studio.html
-          grep -q "file:///android_asset/creator_studio.html" app/src/main/kotlin/ai/wetu/studio/MainActivity.kt
+          grep -q "https://appassets.androidplatform.net/assets/creator_studio.html" app/src/main/kotlin/ai/wetu/studio/MainActivity.kt
 
       - name: Verify manifest contract
         run: |
