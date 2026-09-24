@@ -48,8 +48,12 @@ def validate_media_uri(uri: str, *, require_https: bool = False) -> str:
     if parsed.scheme not in ALLOWED_MEDIA_SCHEMES:
         raise ValueError("unsupported media URI scheme")
     if parsed.scheme == "memory":
-        if parsed.netloc:
-            raise ValueError("memory media URI must not contain a network host")
+        # memory://<namespace>/<path> is an internal, non-network asset identifier.
+        # Its authority is never resolved as a network destination.
+        if parsed.username or parsed.password or parsed.port:
+            raise ValueError("memory media URI must not contain network credentials or port")
+        if parsed.hostname and any(ch in parsed.hostname for ch in "@?#"):
+            raise ValueError("invalid memory media namespace")
         return uri
     if require_https and parsed.scheme != "https":
         raise ValueError("HTTPS media URI required")
