@@ -1,6 +1,8 @@
 """Small, dependency-free security controls for WETU request and file boundaries."""
 from __future__ import annotations
 
+import ipaddress
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -9,6 +11,7 @@ from urllib.parse import urlparse
 
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 ALLOWED_MEDIA_SCHEMES = {"https", "http", "memory"}
+BLOCKED_HOSTNAMES = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback", "0.0.0.0", "[::]"}
 
 def validate_project_id(project_id: str) -> str:
     if not isinstance(project_id, str) or not SAFE_ID_RE.fullmatch(project_id):
@@ -34,14 +37,36 @@ def safe_project_path(root: Path, project_id: str, suffix: str = ".json") -> Pat
         raise ValueError("unsafe project path")
     return candidate
 
-def validate_media_uri(uri: str) -> str:
+def _allowed_media_hosts() -> set[str]:
+    raw = os.getenv("WETU_MEDIA_ALLOWED_HOSTS", "")
+    return {item.strip().lower().rstrip(".") for item in raw.split(",") if item.strip()}
+
+def validate_media_uri(uri: str, *, require_https: bool = False) -> str:
     if not isinstance(uri, str) or not uri.strip():
         raise ValueError("media URI required")
-    parsed = urlparse(uri)
+    parsed = urlparse(uri.strip())
     if parsed.scheme not in ALLOWED_MEDIA_SCHEMES:
         raise ValueError("unsupported media URI scheme")
-    if parsed.scheme in {"http", "https"} and not parsed.netloc:
+    if parsed.scheme == "memory":
+        if parsed.netloc:
+            raise ValueError("memory media URI must not contain a network host")
+        return uri
+    if require_https and parsed.scheme != "https":
+        raise ValueError("HTTPS media URI required")
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if not hostname:
         raise ValueError("invalid HTTP media URI")
+    if hostname in BLOCKED_HOSTNAMES:
+        raise ValueError("local media destination is blocked")
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        ip = None
+    if ip is not None and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+        raise ValueError("private or local media destination is blocked")
+    allowed = _allowed_media_hosts()
+    if allowed and hostname not in allowed and not any(hostname.endswith("." + host) for host in allowed):
+        raise ValueError("media host is not allowlisted")
     return uri
 
 @dataclass
