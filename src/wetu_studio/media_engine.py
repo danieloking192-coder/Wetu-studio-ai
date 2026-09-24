@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 from .video_quality import VideoQualityEngine
 from .video_delivery import VideoDeliveryEngine
 from .media_stability import MediaStabilityEngine
+from .security_controls import validate_media_uri
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -85,6 +86,8 @@ class HttpMediaProvider:
             raise RuntimeError(str(data.get("error", "media provider rejected request"))[:2000])
         if not data.get("uri") and not data.get("asset_url"):
             raise ValueError("provider response missing uri or asset_url")
+        output_uri = data.get("uri", data.get("asset_url"))
+        validate_media_uri(str(output_uri), require_https=True)
         return data
 
 def provider_from_environment(prefix: str = "WETU_MEDIA") -> HttpMediaProvider | None:
@@ -183,6 +186,8 @@ class MediaRegistry:
                 metadata["estimated_delivery_size_mb"] = self.video_delivery.estimate_size_mb(
                     float(result["duration_seconds"]), delivery_target
                 )
+        output_uri = str(result.get("uri", result.get("asset_url", "")))
+        validate_media_uri(output_uri, require_https=bool(metadata["real_media"]))
         return MediaAsset(request.request_id, request.project_id, request.scene_id,
                           request.kind, request.provider, str(result.get("model","unknown")),
-                          str(result.get("uri", result.get("asset_url",""))), "ready", metadata)
+                          output_uri, "ready", metadata)
