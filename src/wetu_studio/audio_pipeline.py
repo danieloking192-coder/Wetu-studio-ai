@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from .security_controls import validate_media_uri
 
 @dataclass(frozen=True)
 class VoiceRequest:
@@ -55,8 +56,9 @@ class HttpAudioProvider:
             raise RuntimeError("audio provider returned an invalid response") from exc
         if not isinstance(data,dict) or not data.get("uri"):
             raise ValueError("audio provider response must contain uri")
+        uri=validate_media_uri(str(data["uri"]), require_https=True)
         return {"request_id":request.request_id,"provider":self.name,"kind":"audio","status":"READY",
-                "uri":str(data["uri"]),"real_audio":True,"metadata":data.get("metadata",{})}
+                "uri":uri,"real_audio":True,"metadata":data.get("metadata",{})}
 
 class AudioRegistry:
     def __init__(self):
