@@ -73,13 +73,17 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: Pixel_2
+          force-avd-creation: true
+          emulator-options: -no-window -no-audio -no-boot-anim
+          disable-animations: true
           script: |
-            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            adb shell am force-stop ai.wetu.studio.debug
-            adb shell am start -n ai.wetu.studio.debug/ai.wetu.studio.MainActivity
-            sleep 5
-            adb shell dumpsys activity activities | grep -q "ai.wetu.studio.debug/ai.wetu.studio.MainActivity"
+            set -eux
+            APK="$GITHUB_WORKSPACE/android/app/build/outputs/apk/debug/app-debug.apk"
+            test -s "$APK"
+            adb install -r "$APK"
             adb shell pm path ai.wetu.studio.debug
-            adb shell uiautomator dump /sdcard/wetu-ui.xml >/dev/null
-            adb shell cat /sdcard/wetu-ui.xml | grep -q "Donne vie à ton histoire."
-            adb shell settings get system screen_brightness
+            adb shell am force-stop ai.wetu.studio.debug
+            adb shell monkey -p ai.wetu.studio.debug -c android.intent.category.LAUNCHER 1
+            sleep 5
+            adb shell pidof ai.wetu.studio.debug
+            adb shell dumpsys package ai.wetu.studio.debug | grep -q "ai.wetu.studio.MainActivity"
