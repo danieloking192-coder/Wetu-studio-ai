@@ -27,8 +27,19 @@ jobs:
           sudo apt-get install -y clamav
           sudo freshclam || true
           clamscan --version
-      - name: Test security scanner
+      - name: Test security scanner with fail-closed AV policy
         env:
           PYTHONPATH: src
-          WETU_DISABLE_ANTIVIRUS: "1"
+          WETU_REQUIRE_ANTIVIRUS: "1"
         run: python -m pytest -q tests/test_media_security_stability.py
+
+      - name: Verify ClamAV detects EICAR test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.com
+          if clamscan --no-summary /tmp/eicar.com; then
+            echo "ERROR: ClamAV did not reject the EICAR test signature"
+            exit 1
+          fi
+          echo "ClamAV correctly rejected the EICAR test signature."
