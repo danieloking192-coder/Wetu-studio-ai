@@ -65,6 +65,7 @@ TRANSLATION = HttpTranslationProvider.from_environment()
 _LOCALIZATION_TRACKS = {}
 IDENTITY_STORE = CharacterIdentityStore(os.environ.get("WETU_IDENTITY_DIR", str(ROOT / ".wetu" / "character_identity")))
 PUBLIC_BASE_URL = os.environ.get("WETU_PUBLIC_BASE_URL", "").rstrip("/")
+CORS_ORIGIN = os.environ.get("WETU_CORS_ORIGIN", "https://appassets.androidplatform.net").rstrip("/")
 FAL_IDENTITY_VIDEO = FalIdentityVideoGateway.from_environment()
 
 def _load_persistent_state():
@@ -305,9 +306,30 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        origin = self.headers.get("Origin", "")
+        if origin and hmac.compare_digest(origin.rstrip("/"), CORS_ORIGIN):
+            self.send_header("Access-Control-Allow-Origin", CORS_ORIGIN)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.end_headers()
         self.wfile.write(raw)
+
+    def do_OPTIONS(self):
+        origin = self.headers.get("Origin", "")
+        if origin and hmac.compare_digest(origin.rstrip("/"), CORS_ORIGIN):
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", CORS_ORIGIN)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(403)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self):
         path = urlparse(self.path).path
