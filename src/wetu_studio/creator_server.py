@@ -40,7 +40,7 @@ from .security_controls import BoundedRateLimiter, validate_content_length
 from .runtime_control import RuntimeJobStore
 from .character_identity import CharacterIdentityStore, build_image_to_video_request
 from .identity_video_gateway import FalIdentityVideoGateway
-from .multilingual_production import MultilingualProductionRequest, build_language_pipeline, SUPPORTED_OUTPUT_LANGUAGES
+from .multilingual_production import MultilingualProductionRequest, HttpTranslationProvider, build_language_pipeline, SUPPORTED_OUTPUT_LANGUAGES
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "prototype" / "creator" / "index.html"
@@ -61,6 +61,7 @@ MAX_LIST_ITEMS = int(os.environ.get("WETU_MAX_LIST_ITEMS", "200"))
 _RATE_LIMITER = BoundedRateLimiter(window_seconds=RATE_LIMIT_WINDOW, max_requests=RATE_LIMIT_MAX)
 LOCALIZATION = LocalizationEngine()
 AUDIO = AudioRegistry()
+TRANSLATION = HttpTranslationProvider.from_environment()
 _LOCALIZATION_TRACKS = {}
 IDENTITY_STORE = CharacterIdentityStore(os.environ.get("WETU_IDENTITY_DIR", str(ROOT / ".wetu" / "character_identity")))
 PUBLIC_BASE_URL = os.environ.get("WETU_PUBLIC_BASE_URL", "").rstrip("/")
@@ -452,6 +453,25 @@ class Handler(BaseHTTPRequestHandler):
                 request["options"]["realistic_video"] = True
                 self._send(200, {"ok": True, "request": request,
                                  "next_step": "Configure a real image-to-video provider to render the video."})
+                return
+            if path == "/api/multilingual/translate":
+                if TRANSLATION is None:
+                    self._send(503, {"ok": False, "real_translation": False, "error": "translation provider is not configured server-side"})
+                    return
+                req = MultilingualProductionRequest(
+                    project_id=body.get("project_id", STATE.project_id), scene_id=body.get("scene_id"),
+                    source_language=body.get("source_language", "fr"), target_language=body["target_language"],
+                    script=body["script"], preserve_meaning=bool(body.get("preserve_meaning", True)),
+                    preserve_tone=bool(body.get("preserve_tone", True)), lip_sync=bool(body.get("lip_sync", True)),
+                )
+                issues = req.validate()
+                if issues:
+                    self._send(400, {"ok": False, "real_translation": False, "issues": issues})
+                    return
+                result = TRANSLATION.translate(source_language=req.source_language, target_language=req.target_language,
+                                               script=req.script, preserve_meaning=req.preserve_meaning,
+                                               preserve_tone=req.preserve_tone)
+                self._send(200, result)
                 return
             if path == "/api/multilingual/plan":
                 req = MultilingualProductionRequest(
