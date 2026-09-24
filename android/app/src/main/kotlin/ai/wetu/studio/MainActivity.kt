@@ -3,12 +3,10 @@ package ai.wetu.studio
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.view.ViewGroup
 import android.webkit.*
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
-import androidx.webkit.WebViewAssetLoader
 import java.net.URI
 
 class MainActivity : ComponentActivity() {
@@ -44,7 +42,7 @@ class MainActivity : ComponentActivity() {
         }
         urlInput = EditText(this).apply {
             hint = "Adresse HTTPS du serveur WETU"
-            text = prefs.getString("base_url", defaultUrl)
+            setText(prefs.getString("base_url", defaultUrl) ?: defaultUrl)
             setSingleLine(true)
             setTextColor(android.graphics.Color.WHITE)
             setHintTextColor(android.graphics.Color.GRAY)
@@ -114,9 +112,7 @@ class MainActivity : ComponentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1001) {
-            val result = if (resultCode == RESULT_OK && data?.data != null) {
-                arrayOf(data.data!!)
-            } else null
+            val result = if (resultCode == RESULT_OK && data?.data != null) arrayOf(data.data!!) else null
             fileCallback?.onReceiveValue(result)
             fileCallback = null
         }
@@ -125,7 +121,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         fileCallback?.onReceiveValue(null)
         fileCallback = null
-        webView.takeIf { ::webView.isInitialized }?.destroy()
+        if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
     }
 }
