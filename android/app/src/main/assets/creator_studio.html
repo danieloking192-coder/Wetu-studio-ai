@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http://127.0.0.1:8787; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#080a0f"><title>WETU — Creator Studio</title>
 <style>
 :root{--bg:#080a0f;--panel:#10141c;--panel2:#0c1017;--line:#202734;--text:#f7f9fc;--muted:#8d97a8;--soft:#171c25;--accent:#fff;--radius:18px}
@@ -35,7 +35,7 @@ textarea,select{width:100%;background:#0a0e14;color:#f7f9fc;border:1px solid #29
 </aside>
 <main>
 <section class="top"><div><div class="eyebrow">Espace de création</div><h1>Donne vie à ton histoire.</h1><p>Photos · personnages · décors · voix · génération · montage.</p></div><div class="actions"><button class="btn secondary">Ouvrir</button><button class="btn primary" onclick="newProject()">＋ Nouveau projet</button></div></section>
-<section class="hero">
+<div id="toast" role="status" aria-live="polite" style="position:fixed;top:16px;right:16px;z-index:30;max-width:340px;padding:12px 14px;border:1px solid #303846;border-radius:14px;background:#0b0f15;color:#e8edf5;box-shadow:0 16px 50px #0008;display:none"></div><section class="hero">
 <div class="heroCard"><span class="statusPill"><span class="dot"></span> Workspace local sécurisé</span><h2>Projet sans titre</h2><p>Construis une production réaliste scène par scène. Les originaux restent protégés et les sorties sont préparées pour le mobile.</p><button class="btn primary" onclick="document.getElementById('file').click()">＋ Ajouter des médias</button></div>
 <div class="progressCard"><div class="muted">État du projet</div><strong id="pct">18%</strong><div class="bar"><span></span></div><div class="muted">Fondation du projet prête</div></div>
 </section>
@@ -56,9 +56,25 @@ textarea,select{width:100%;background:#0a0e14;color:#f7f9fc;border:1px solid #29
 <div class="mobileNav"><span class="active">⌂</span><span>▣</span><span>✦</span><span>▤</span><span>⚙</span></div>
 <div class="footer"><div class="checks">✓ Sécurité média active <span>✓ Originaux protégés</span><span>✓ QA vidéo</span></div><button class="btn primary" onclick="startProduction()">▶ Lancer la production</button></div>
 <script>
-function newProject(){document.getElementById('scenario').value='';document.getElementById('fileStatus').textContent='Nouveau projet prêt.';document.getElementById('pct').textContent='18%'}
-function showFiles(i){document.getElementById('fileStatus').textContent=i.files.length?i.files.length+' média(s) sélectionné(s) — prêt pour contrôle sécurité.':'Aucun fichier sélectionné.'}
-function translateDraft(){document.getElementById('translationStatus').textContent='Brouillon de traduction demandé — moteur linguistique à connecter.'}
-function startProduction(){document.getElementById('translationStatus').textContent='Production préparée. Les moteurs IA réels seront connectés au Creator Core.'}
+const API="http://127.0.0.1:8787";
+function toast(message){const t=document.getElementById("toast");t.textContent=message;t.style.display="block";clearTimeout(window.__toast);window.__toast=setTimeout(()=>t.style.display="none",3200)}
+async function api(path,body){const r=await fetch(API+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});let data={};try{data=await r.json()}catch{}if(!r.ok)throw new Error(data.error||("HTTP "+r.status));return data}
+function newProject(){document.getElementById("scenario").value="";document.getElementById("fileStatus").textContent="Nouveau projet prêt.";document.getElementById("pct").textContent="18%";toast("Projet WETU initialisé.")}
+function showFiles(i){document.getElementById("fileStatus").textContent=i.files.length?i.files.length+" média(s) sélectionné(s) — prêt pour contrôle sécurité.":"Aucun fichier sélectionné.";if(i.files.length)toast("Média sélectionné. Le contrôle de sécurité sera effectué avant ingestion.");}
+async function translateDraft(){
+ const script=document.getElementById("scenario").value.trim(), target=document.getElementById("lang").value;
+ if(!script){toast("Écris d’abord le scénario.");return}
+ document.getElementById("translationStatus").textContent="Traduction sécurisée en cours…";
+ try{const d=await api("/api/multilingual/translate",{source_language:"fr",target_language:target,script,preserve_meaning:true,preserve_tone:true,lip_sync:true});document.getElementById("scenario").value=d.text;document.getElementById("translationStatus").textContent="Traduction réelle terminée · "+target;toast("Traduction terminée.");}
+ catch(e){document.getElementById("translationStatus").textContent="Moteur réel indisponible — aucun faux résultat affiché.";toast(e.message)}
+}
+async function startProduction(){
+ const script=document.getElementById("scenario").value.trim();
+ if(!script){toast("Ajoute un scénario avant la production.");return}
+ document.getElementById("translationStatus").textContent="Production préparée avec contrôle qualité.";
+ try{const h=await fetch(API+"/api/runtime/health");if(!h.ok)throw new Error("Creator Core indisponible");const d=await h.json();toast("Creator Core connecté · "+Object.keys(d.providers||{}).length+" fournisseur(s) surveillé(s).");}
+ catch(e){toast("Production locale prête; connexion Creator Core à établir.")}
+}
+
 </script>
 </body></html>
