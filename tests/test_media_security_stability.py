@@ -12,7 +12,9 @@ def _jpeg_probe():
 def test_image_signature_and_hash(tmp_path):
     p = tmp_path / "x.jpg"
     p.write_bytes(_jpeg_probe())
-    r = MediaSecurityScanner(require_antivirus=False).scan(p, "image/jpeg")
+    # Keep the unit test deterministic: real ClamAV validation is covered by the CI EICAR gate.
+    with patch("wetu_studio.media_security.shutil.which", return_value=None):
+        r = MediaSecurityScanner(require_antivirus=False).scan(p, "image/jpeg")
     assert r.clean and len(r.sha256) == 64
 
 
