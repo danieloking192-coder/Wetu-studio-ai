@@ -1,15 +1,49 @@
-from wetu_studio.localization_engine import LocalizationEngine, LocalizationTrack
-from wetu_studio.audio_pipeline import AudioRegistry, VoiceRequest
+import json
+from unittest.mock import patch
 
-def test_multilingual_lines_and_subtitles():
-    t=LocalizationTrack("scene-1")
-    e=LocalizationEngine()
-    e.add_line(t,"l1","hero","fr","Bonjour","voice-fr")
-    e.add_line(t,"l2","hero","ln","Mbote","voice-ln")
-    assert e.languages(t)==["fr","ln"]
-    assert len(e.export_subtitles(t))==2
+import pytest
 
-def test_audio_provider_is_explicitly_non_real():
-    r=AudioRegistry()
-    x=r.generate(VoiceRequest("a1","p","s","hero","fr","Bonjour"))
-    assert x["status"]=="READY" and x["real_audio"] is False
+from wetu_studio.audio_pipeline import HttpAudioProvider, VoiceRequest
+from wetu_studio.multilingual_production import HttpTranslationProvider, MultilingualProductionRequest, build_language_pipeline
+
+
+def test_tshiluba_language_pipeline_is_supported():
+    req = MultilingualProductionRequest("p1", "s1", "fr", "tsh", "Bonjour, bienvenue à Kinshasa.")
+    plan = build_language_pipeline(req)
+    assert plan["ok"] is True
+    assert plan["target_language"] == "tsh"
+    assert "meaning_preserving_translation" in plan["stages"]
+
+
+def test_translation_provider_requires_https():
+    with pytest.raises(ValueError):
+        HttpTranslationProvider("http://example.invalid")
+
+
+def test_translation_provider_rejects_empty_response():
+    provider = HttpTranslationProvider("https://translation.invalid")
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return json.dumps({"text": ""}).encode()
+    with patch("wetu_studio.multilingual_production.urlopen", return_value=Response()):
+        with pytest.raises(ValueError):
+            provider.translate(source_language="fr", target_language="tsh", script="Bonjour")
+
+
+def test_audio_provider_requires_https():
+    with pytest.raises(ValueError):
+        HttpAudioProvider("http://example.invalid")
+
+
+def test_audio_provider_accepts_contract_response():
+    provider = HttpAudioProvider("https://audio.invalid")
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return json.dumps({"uri": "https://cdn.invalid/audio.wav"}).encode()
+    request = VoiceRequest("v1", "p1", "s1", "amina", "tsh", "Muakane!")
+    with patch("wetu_studio.audio_pipeline.urlopen", return_value=Response()):
+        result = provider.generate(request, {})
+    assert result["real_audio"] is True
+    assert result["uri"].startswith("https://")
