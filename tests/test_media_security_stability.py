@@ -7,7 +7,7 @@ from wetu_studio.media_stability import MediaStabilityEngine
 
 def test_image_signature_and_hash(tmp_path):
     p = tmp_path / "x.jpg"
-    p.write_bytes(b"\\xff\\xd8\\xff" + b"x" * 20)
+    p.write_bytes(b"\xff\xd8\xff" + b"x" * 20)
     r = MediaSecurityScanner(require_antivirus=False).scan(p, "image/jpeg")
     assert r.clean and len(r.sha256) == 64
 
@@ -21,8 +21,8 @@ def test_bad_signature_is_blocked(tmp_path):
 
 def test_malware_required_blocks_without_scanner(tmp_path):
     p = tmp_path / "x.jpg"
-    p.write_bytes(b"\\xff\\xd8\\xff" + b"x" * 20)
-    with patch("wetu_studio.media_security.shutil.which", autospec=True, return_value=None):
+    p.write_bytes(b"\xff\xd8\xff" + b"x" * 20)
+    with patch("wetu_studio.media_security.shutil.which", return_value=None):
         with pytest.raises(RuntimeError, match="antivirus scanner unavailable"):
             MediaSecurityScanner(require_antivirus=True).scan(p, "image/jpeg")
 
