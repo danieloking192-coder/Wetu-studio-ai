@@ -31,7 +31,6 @@ jobs:
         env:
           PYTHONPATH: src
           WETU_REQUIRE_ANTIVIRUS: "1"
-          WETU_DISABLE_ANTIVIRUS: "1"
         run: python -m pytest -q tests/test_media_security_stability.py
 
       - name: Verify ClamAV detects EICAR test signature
