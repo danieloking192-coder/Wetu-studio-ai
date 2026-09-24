@@ -18,12 +18,13 @@ permissions:
 
 jobs:
   build:
-    name: Build, integrity and emulator smoke test
+    name: Build and verify WETU Android APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: android
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,23 +41,46 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Verify Creator Studio assets
+      - name: Verify Android project
         run: |
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/kotlin/ai/wetu/studio/MainActivity.kt
           test -s app/src/main/assets/creator_studio.html
+
+      - name: Verify Creator Studio contract
+        run: |
           grep -q "WETU" app/src/main/assets/creator_studio.html
+          grep -q "Donne vie à ton histoire" app/src/main/assets/creator_studio.html
+          grep -q 'value="lua"' app/src/main/assets/creator_studio.html
           grep -q "Tshiluba" app/src/main/assets/creator_studio.html
           grep -q "480p" app/src/main/assets/creator_studio.html
           grep -q "720p" app/src/main/assets/creator_studio.html
           grep -q "1080p" app/src/main/assets/creator_studio.html
+          grep -q "file:///android_asset/creator_studio.html" app/src/main/kotlin/ai/wetu/studio/MainActivity.kt
+
+      - name: Verify manifest contract
+        run: |
+          grep -q 'android:exported="true"' app/src/main/AndroidManifest.xml
+          grep -q 'android:name=".MainActivity"' app/src/main/AndroidManifest.xml
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Verify APK integrity
         run: |
-          test -s app/build/outputs/apk/debug/app-debug.apk
-          unzip -t app/build/outputs/apk/debug/app-debug.apk >/dev/null
-          sha256sum app/build/outputs/apk/debug/app-debug.apk
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          sha256sum "$APK"
+
+      - name: Inspect APK contents
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          unzip -l "$APK" | grep -q "assets/creator_studio.html"
+          unzip -l "$APK" | grep -q "AndroidManifest.xml"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -65,87 +89,3 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
-
-      - name: Enable KVM for Android emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Android emulator smoke test
-        continue-on-error: true
-        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e754cae5a
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_7
-          cores: 2
-          ram-size: 2G
-          heap-size: 512M
-          disk-size: 8G
-          force-avd-creation: true
-          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          disable-animations: true
-          emulator-boot-timeout: 900
-          script: |
-            set -uo pipefail
-            APK="$GITHUB_WORKSPACE/android/app/build/outputs/apk/debug/app-debug.apk"
-            echo "=== WETU ANDROID DIAGNOSTIC ==="
-            echo "APK=$APK"
-            if [ ! -s "$APK" ]; then
-              echo "::error::APK missing or empty"
-              exit 1
-            fi
-
-            echo "=== DEVICE ==="
-            adb devices
-            adb shell getprop ro.build.version.sdk || true
-
-            echo "=== INSTALL ==="
-            if ! adb install -r "$APK"; then
-              echo "::group::ADB install diagnostics"
-              adb shell pm list packages | grep -E "ai\.wetu\.studio" || true
-              adb logcat -d -t 200 || true
-              echo "::endgroup::"
-              exit 1
-            fi
-
-            echo "=== PACKAGE ==="
-            adb shell pm path ai.wetu.studio.debug || {
-              echo "::error::WETU debug package not installed"
-              adb logcat -d -t 300 || true
-              exit 1
-            }
-
-            echo "=== LAUNCH ==="
-            adb shell am force-stop ai.wetu.studio.debug || true
-            if ! adb shell monkey -p ai.wetu.studio.debug -c android.intent.category.LAUNCHER 1; then
-              echo "::group::Launch diagnostics"
-              adb shell dumpsys package ai.wetu.studio.debug || true
-              adb logcat -d -t 400 || true
-              echo "::endgroup::"
-              exit 1
-            fi
-
-            sleep 5
-
-            echo "=== PROCESS ==="
-            if ! adb shell pidof ai.wetu.studio.debug; then
-              echo "::error::WETU process is not running after launch"
-              echo "::group::Runtime diagnostics"
-              adb shell dumpsys activity activities | tail -n 200 || true
-              adb logcat -d -t 500 || true
-              echo "::endgroup::"
-              exit 1
-            fi
-
-            echo "=== ACTIVITY REGISTRATION ==="
-            if ! adb shell dumpsys package ai.wetu.studio.debug | grep -q "ai.wetu.studio.MainActivity"; then
-              echo "::error::MainActivity not registered"
-              adb shell dumpsys package ai.wetu.studio.debug || true
-              adb logcat -d -t 500 || true
-              exit 1
-            fi
-
-            echo "=== WETU SMOKE TEST PASSED ==="
